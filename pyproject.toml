@@ -1,0 +1,25 @@
+[project]
+name = "jwc"
+version = "0.1.0"
+description = "Default template for PDM package"
+authors = [
+    {name = "Zjl37", email = "2693911885@qq.com"},
+]
+dependencies = [
+    "ics>=0.7.2",
+    "click>=8.1.7",
+]
+requires-python = ">=3.10"
+readme = "README.md"
+license = {text = "GPLv3"}
+
+
+[tool.pdm]
+distribution = true
+
+[project.scripts]
+jwc = "jwc.cli:main"
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
