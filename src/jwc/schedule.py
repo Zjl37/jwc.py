@@ -16,7 +16,7 @@ LESSON, EXAM, LAB = ScheduleEntryKind
 
 def get_calendar_name(kind: ScheduleEntryKind = LESSON):
     # TODO: determine semester dynamically
-    return f'24春{"考试" if kind == EXAM else "课程"} - {datetime.date.today().strftime("%m月%d日")}更新'
+    return f'24秋{"考试" if kind == EXAM else "课程"} - {datetime.date.today().strftime("%m月%d日")}更新'
 
 
 def _to_range(text: str) -> Tuple[int, int]:
@@ -124,7 +124,7 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
 
     @classmethod
     def parse_lab(cls, obj: dict) -> Self | None:
-        pattern = r'''【实验】(?P<课程名称>[^\[\]]+)\[(?P<实验名称>[^\[\]]+)\]
+        pattern = r'''【实验】(?P<课程名称>[^\[\]]+)(\[(?P<实验名称>[^\[\]]+)\])?
 \[(?P<节次>[^\[\]]+)节\]\[(?P<周次>[^\[\]]+)周\]
 \[(?P<地点>[^\[\]]*)\]'''
 
@@ -185,11 +185,10 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
             case ScheduleEntryKind.EXAM:
                 return f'【考试】{self.name}'
 
-
     def get_ics_description(self):
-        return f'''{self.name + '\n' if self.kind == LAB else ''}
+        # 如实验日程具有实验名称，则会作为日程标题，故将课程名称放在描述中
+        return f'''{self.name + '\n' if self.kind == LAB and self.lab_name else ''}
         {self.description}'''
-
 
     def to_ics_event(self, semester_start_date) -> Iterable[ics.Event]:
         for t0, t1 in self.time_ranges:
