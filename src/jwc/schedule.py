@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 from typing import Iterable, List, Literal, Tuple, Self
 from enum import Enum
+import click
 import ics
 import json
 import zoneinfo
 import datetime
 import re
+import traceback
 from . import cache
 from . import preprocess
 
@@ -59,22 +61,18 @@ time_slot_mapping = {
 
 @dataclass
 class ScheduledDates:
-    week_ranges: List[Tuple[int, int]]
+    weeks: List[int]
     day_of_week: Literal[1, 2, 3, 4, 5, 6, 7]
 
     def all_dates(self, semester_start_date):
         return (
             semester_start_date +
             datetime.timedelta(days=7 * (week - 1) + (self.day_of_week - 1))
-            for w0, w1 in self.week_ranges for week in range(w0, w1 + 1)
+            for week in self.weeks
         )
 
     def contains(self, q_week_id: int, q_day_of_week: int):
-        def week_range_contains_q(week_range: Tuple[int, int]):
-            w0, w1 = week_range
-            return w0 <= q_week_id <= w1
-        return q_day_of_week == self.day_of_week and \
-            any(map(week_range_contains_q, self.week_ranges))
+        return q_day_of_week == self.day_of_week and q_week_id in self.weeks
 
 
 def _parse_date(text: str) -> datetime.date:
@@ -88,6 +86,23 @@ def _parse_date(text: str) -> datetime.date:
     if date < d0:
         date = datetime.date(d0.year + 1, *map(int, mmdd))
     return date
+
+
+def _parse_scheduled_weeks(text: str) -> List[int]:
+    result = []
+    for span in text.split(','):
+        if '-' not in span:
+            result.append(int(span))
+        elif span[-1] == '双':
+            w0, w1 = map(int, span[:-1].split('-'))
+            result.extend(filter(lambda x: x % 2 == 0, range(w0, w1+1)))
+        elif span[-1] == '单':
+            w0, w1 = map(int, span[:-1].split('-'))
+            result.extend(filter(lambda x: x % 2 == 1, range(w0, w1+1)))
+        else:
+            w0, w1 = map(int, span.split('-'))
+            result.extend(range(w0, w1+1))
+    return result
 
 
 @dataclass
@@ -106,7 +121,7 @@ class ScheduleEntry:
         r = int(obj['KEY'][2])
         if r not in [1, 2, 3, 4, 5, 6, 7]:
             print(f"[!] warning: weird day_of_week {r} on this entry:")
-            print(json.dumps(obj))
+            print(json.dumps(obj, ensure_ascii=False))
         return r            # type: ignore
 
     @classmethod
@@ -129,7 +144,7 @@ class ScheduleEntry:
                        for t in time_slot_ranges]
         description = ''
 
-        dates = ScheduledDates(_to_ranges(
+        dates = ScheduledDates(_parse_scheduled_weeks(
             result.group('周次')), cls.parse_day_of_week(obj))
 
         if obj['FILEURL'] is not None:
@@ -158,7 +173,7 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
         time_ranges = [(time_slot_mapping[t[0]][0], time_slot_mapping[t[1]][1])
                        for t in time_slot_ranges]
 
-        dates = ScheduledDates(_to_ranges(
+        dates = ScheduledDates(_parse_scheduled_weeks(
             result.group('周次')), cls.parse_day_of_week(obj))
 
         return cls(name, dates, time_ranges, location, LAB, lab_name=lab_name)
@@ -249,11 +264,16 @@ class Schedule:
             if item['KEY'] == 'bz':
                 # 忽略备注条目
                 continue
-            entry = ScheduleEntry.parse_exam(item) or ScheduleEntry.parse_lab(item) \
-                or ScheduleEntry.parse_lesson(item)
+            entry = None
+            try:
+                entry = ScheduleEntry.parse_exam(item) or ScheduleEntry.parse_lab(item) \
+                    or ScheduleEntry.parse_lesson(item)
+            except Exception:
+                print(traceback.format_exc())
             if entry is None:
-                print(json.dumps(item))
-                raise ValueError(f'遇到无法解析的课表条目。')
+                print(json.dumps(item, ensure_ascii=False))
+                click.secho(f'[!] 遇到无法解析的课表条目。上述课程将不会添加到生成的日历中。', fg='red')
+                continue
             entries.append(entry)
         return cls(entries)
 

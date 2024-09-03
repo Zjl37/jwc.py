@@ -98,6 +98,7 @@ T_LAB_RULES = [
     (r"高级语言程序设计", "🖥"),
 
     (r"大模型", "💬"),
+    (r"网络安全", "🔐"),
 ]
 T_LAB_RULES = list(map(lambda r: (re.compile(r[0], flags=re.M), r[1]), T_LAB_RULES))
 def transform_lab_name(name: str, lab_name: str) -> str:
