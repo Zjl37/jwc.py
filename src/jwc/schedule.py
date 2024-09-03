@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Iterable, List, Tuple, Self
+from typing import Iterable, List, Literal, Tuple, Self
 from enum import Enum
 import ics
 import json
@@ -60,7 +60,21 @@ time_slot_mapping = {
 @dataclass
 class ScheduledDates:
     week_ranges: List[Tuple[int, int]]
-    day_of_week: int
+    day_of_week: Literal[1, 2, 3, 4, 5, 6, 7]
+
+    def all_dates(self, semester_start_date):
+        return (
+            semester_start_date +
+            datetime.timedelta(days=7 * (week - 1) + (self.day_of_week - 1))
+            for w0, w1 in self.week_ranges for week in range(w0, w1 + 1)
+        )
+
+    def contains(self, q_week_id: int, q_day_of_week: int):
+        def week_range_contains_q(week_range: Tuple[int, int]):
+            w0, w1 = week_range
+            return w0 <= q_week_id <= w1
+        return q_day_of_week == self.day_of_week and \
+            any(map(week_range_contains_q, self.week_ranges))
 
 
 def _parse_date(text: str) -> datetime.date:
@@ -88,8 +102,12 @@ class ScheduleEntry:
     lab_name: str = ''
 
     @staticmethod
-    def parse_day_of_week(obj: dict) -> int:
-        return int(obj['KEY'][2])
+    def parse_day_of_week(obj: dict) -> Literal[1, 2, 3, 4, 5, 6, 7]:
+        r = int(obj['KEY'][2])
+        if r not in [1, 2, 3, 4, 5, 6, 7]:
+            print(f"[!] warning: weird day_of_week {r} on this entry:")
+            print(json.dumps(obj))
+        return r            # type: ignore
 
     @classmethod
     def parse_lesson(cls, obj: dict) -> Self | None:
@@ -198,12 +216,7 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
                 case datetime.date():
                     dates = [self.dates]
                 case ScheduledDates(week_ranges, day_of_week):
-                    dates = [
-                        semester_start_date + datetime.timedelta(
-                            days=7 * (week - 1) + (day_of_week - 1)
-                        )
-                        for w0, w1 in week_ranges for week in range(w0, w1 + 1)
-                    ]
+                    dates = list(self.dates.all_dates(semester_start_date))
             for date in dates:
                 d0 = datetime.datetime.combine(date, t0)
                 d1 = datetime.datetime.combine(date, t1)
@@ -216,6 +229,13 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
                     alarms=self.get_ics_alarms(),
                 )
                 yield event
+
+    def overlaps_with(self, time_span: Tuple[datetime.time, datetime.time]):
+        s2, e2 = time_span
+        for s1, e1, in self.time_ranges:
+            if max(s1, s2) < min(e1, e2):
+                return True
+        return False
 
 
 @dataclass
@@ -244,3 +264,24 @@ class Schedule:
         for entry in self.entries:
             cal.events.update(entry.to_ics_event(d0))
         return cal
+
+    def query_lesson_at(
+            self,
+            q_week_id: int,
+            q_date: datetime.date,
+            q_day_of_week: int,
+            q_time_span: Tuple[int, int]
+    ):
+        for entry in self.entries:
+            match entry.dates:
+                case datetime.date():
+                    if entry.dates != q_date:
+                        continue
+                case ScheduledDates():
+                    if not entry.dates.contains(q_week_id, q_day_of_week):
+                        continue
+            if entry.overlaps_with((
+                    time_slot_mapping[q_time_span[0]][0],
+                    time_slot_mapping[q_time_span[1]][1]
+            )):
+                yield entry

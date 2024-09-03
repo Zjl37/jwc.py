@@ -22,7 +22,7 @@ def init_session():
         'Proxy-Connection': 'keep-alive',
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0',
         'X-Requested-With': 'XMLHttpRequest',
-        'Cookie': click.prompt("输入 Cookie，形如“route=xyz; JSESSIONID=xyz”", hide_input=True)
+        'Cookie': click.prompt("输入 Cookie，形如“_gscu_651000777=???; route=???; _gscbrs_651000777=?; JSESSIONID=???”", hide_input=True)
     })
 
 
