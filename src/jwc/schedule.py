@@ -180,7 +180,7 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
 
     @classmethod
     def parse_exam(cls, obj: dict) -> Self | None:
-        pattern = r'''【考试】(?P<名称>.+)
+        pattern = r'''【[^【】]*考试】\n?(?P<名称>.+)
 (?P<日期>.+)
 (?P<时间>.+)
 (?P<地点>.+)'''
