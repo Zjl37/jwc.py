@@ -63,6 +63,7 @@ def parse_lab_entry(item: dict):
             t, '%H:%M').time().replace(tzinfo=zone), [item['StartTime'], item['EndTime']]))],
         item['ClassRoom'],
         LAB,
+        teacher=item['TeacherName'],
         lab_name=item['LabName']
     )
 

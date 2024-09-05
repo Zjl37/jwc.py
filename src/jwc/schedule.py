@@ -211,7 +211,8 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
     def get_ics_name(self):
         match self.kind:
             case ScheduleEntryKind.LAB:
-                return preprocess.transform_lab_name(self.name, self.lab_name)
+                return preprocess.transform_lab_name(self.name, self.lab_name) + \
+                    (f'［{self.teacher}］' if self.teacher else '')
             case ScheduleEntryKind.LESSON:
                 name = preprocess.transform_lesson_name(self.name)
                 return f'{name}［{self.teacher}］'
