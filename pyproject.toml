@@ -13,6 +13,7 @@ dependencies = [
     "odfpy>=1.4.1",
     "openpyxl>=3.1.5",
     "xlrd>=2.0.1",
+    "beautifulsoup4>=4.12.3",
 ]
 requires-python = ">=3.10"
 readme = "README.md"
