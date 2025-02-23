@@ -7,7 +7,7 @@ from .schedule import Schedule, get_calendar_name
 
 @click.group()
 def cli():
-    click.echo('[神蚣 · jwc.py CLI]')
+    click.echo('[动量神蚣 · jwc.py CLI]')
     pass
 
 

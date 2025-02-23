@@ -1,26 +1,61 @@
 import requests
 from bs4 import BeautifulSoup as bs
 
+HITIDS_HOST = 'https://ids.hit.edu.cn'
+SZSSO_HOST = "https://sso.hitsz.edu.cn:7002"
+
+
 def goto_bind_auth():
-    bind_auth_req = requests.Request('GET', 'https://ids.hit.edu.cn/authserver/login?service=http%3A%2F%2Fjw.hitsz.edu.cn%2FcasLogin')
+    bind_auth_req = requests.Request(
+        'GET', HITIDS_HOST + '/authserver/login?service=http%3A%2F%2Fjw.hitsz.edu.cn%2FcasLogin'
+    )
     return bind_auth_req
 
-def goto_sz_auth(response_content):
-    soup = bs(response_content, 'html.parser')
-    try:
-        sz_login_url = "https://ids.hit.edu.cn" + soup.select_one("body > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > section > div:nth-of-type(2) > div > div > span:nth-of-type(2) > a")['href'] + "&success=http%3A%2F%2Fjw.hitsz.edu.cn%2FcasLogin"
-        sz_login_url = sz_login_url.replace("amp;", "")
-    except:
-        raise Exception("获取登录地址失败")
-    
+
+def goto_sz_auth(hitids_html: str, parse: bool = False):
+    def parse_login_url(hitids_html: str):
+        soup = bs(hitids_html, 'html.parser')
+        ulogin_elems = soup.select('.idsUnion_loginFont_a')
+        ulogin_elem = next(
+            (e for e in ulogin_elems if '深圳' in e.getText()), None
+        )
+        if ulogin_elem is None:
+            raise Exception("未找到联合登录元素")
+        sz_login_url = HITIDS_HOST + str(ulogin_elem['href']) + \
+            "&success=http%3A%2F%2Fjw.hitsz.edu.cn%2FcasLogin"
+        sz_login_url = sz_login_url.replace("&amp;", "&")
+        return sz_login_url
+
+    if parse:
+        try:
+            sz_login_url = parse_login_url(hitids_html)
+        except:
+            raise Exception("获取登录地址失败")
+    else:
+        sz_login_url = HITIDS_HOST + \
+            '/authserver/combinedLogin.do?type=IDSUnion&appId=ff2dfca3a2a2448e9026a8c6e38fa52b&success=http%3A%2F%2Fjw.hitsz.edu.cn%2FcasLogin'
+
     jump_to_login_request = requests.Request('GET', sz_login_url)
     return jump_to_login_request
 
-def generate_login_form(soup, username, password):
+
+def generate_login_form(soup: bs, username: str, password: str):
     try:
-        redirect_url = soup.select_one("#authZForm > input:nth-of-type(3)")['value']
-        client_id = soup.select_one("#authZForm > input:nth-of-type(4)")['value']
-        state = soup.select_one("#authZForm > input:nth-of-type(6)")['value']
+        el = soup.select_one("#authZForm > input[name=redirect_uri]")
+        if el is None:
+            raise Exception("未找到 redirect_uri input 元素")
+        redirect_url = el['value']
+
+        el = soup.select_one("#authZForm > input[name=client_id]")
+        if el is None:
+            raise Exception("未找到 client_id input 元素")
+        client_id = el['value']
+
+        el = soup.select_one("#authZForm > input[name=state]")
+        if el is None:
+            raise Exception("未找到 state input 元素")
+        state = el['value']
+
         form = {
             "action": "authorize",
             "response_type": "code",
@@ -35,47 +70,56 @@ def generate_login_form(soup, username, password):
     except:
         raise Exception("生成登录表单失败")
 
-def login_request(response_content, username, password):
-    soup = bs(response_content, 'html.parser')
+
+def login_request(szsso_html: str, username: str, password: str):
+    soup = bs(szsso_html, 'html.parser')
     try:
-        login_url = "https://sso.hitsz.edu.cn:7002" + soup.select_one("#authZForm")['action']
+        form_elem = soup.select_one("#authZForm")
+        if form_elem is None:
+            raise Exception("未找到表单元素")
+        login_url = SZSSO_HOST + str(form_elem['action'])
     except:
         raise Exception("获取登录地址失败")
-    login_request = requests.Request('POST', login_url, data=generate_login_form(soup, username, password))
+    login_request = requests.Request(
+        'POST', login_url, data=generate_login_form(soup, username, password)
+    )
     return login_request
 
-def auth_ticket(ticket_url):
-    auth_ticket_request = requests.Request('GET', ticket_url)
-    return auth_ticket_request
 
-def auth_login(session:requests.session, username:str, password:str):
+# def auth_ticket(ticket_url):
+#     auth_ticket_request = requests.Request('GET', ticket_url)
+#     return auth_ticket_request
+
+
+def auth_login(session: requests.Session, username: str, password: str):
     try:
         bind_auth_req = goto_bind_auth()
         bind_auth_res = session.send(bind_auth_req.prepare())
-        
-        if bind_auth_res.status_code != 200:
+
+        if not bind_auth_res.ok:
             return False, "访问联合认证失败"
-        
+
         goto_sz_req = goto_sz_auth(bind_auth_res.text)
         goto_sz_res = session.send(goto_sz_req.prepare())
-        
-        if goto_sz_res.status_code != 200:
+
+        if not goto_sz_res.ok:
             return False, "跳转至深圳登录界面失败"
-        
-        login_req = login_request(goto_sz_res.text,username, password)
+
+        login_req = login_request(goto_sz_res.text, username, password)
         login_res = session.send(login_req.prepare())
-        
-        if login_res.status_code != 200:
+
+        if not login_res.ok:
             return False, "登录请求失败。请检查账号密码是否正确"
-        
+
         if "/authentication/main" not in login_res.url:
             return False, "登录失败。请检查账号密码是否正确"
-        
+
         return True, "登录成功"
-    
+
     except Exception as e:
         return False, str(e)
-    
+
+
 if __name__ == "__main__":
     session = requests.Session()
     # proxy = {
@@ -84,5 +128,5 @@ if __name__ == "__main__":
     # }
     username = input("请输入账号：")
     password = input("请输入密码：")
-    #print(auth_login(session, username, password,proxy))
+    # print(auth_login(session, username, password, proxy))
     print(auth_login(session, username, password))

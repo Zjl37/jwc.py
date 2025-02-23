@@ -18,7 +18,7 @@ LESSON, EXAM, LAB = ScheduleEntryKind
 
 def get_calendar_name(kind: ScheduleEntryKind = LESSON):
     # TODO: determine semester dynamically
-    return f'24秋{"考试" if kind == EXAM else "课程"} - {datetime.date.today().strftime("%m月%d日")}更新'
+    return f'25春{"考试" if kind == EXAM else "课程"} - {datetime.date.today().strftime("%m月%d日")}更新'
 
 
 def _to_range(text: str) -> Tuple[int, int]:
