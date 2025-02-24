@@ -13,7 +13,10 @@ JSON_ro: TypeAlias = Mapping[str, "JSON_ro"] \
 
 
 def jwc_cache_dir():
-    return './jwc-cache'
+    dir = './jwc-cache'
+    if not os.path.isdir(dir):
+        os.makedirs(dir)
+    return dir
 
 
 globalSession: requests.Session | None = None  # type: ignore
