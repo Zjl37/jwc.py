@@ -1,5 +1,6 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, List, Literal, Tuple, Self
+from typing import Literal, Self
 from enum import Enum
 import click
 import ics
@@ -21,7 +22,7 @@ def get_calendar_name(kind: ScheduleEntryKind = LESSON):
     return f'25春{"考试" if kind == EXAM else "课程"} - {datetime.date.today().strftime("%m月%d日")}更新'
 
 
-def _to_range(text: str) -> Tuple[int, int]:
+def _to_range(text: str) -> tuple[int, int]:
     """将表示范围的字符串转为元组"""
     """_to_range('1-4') -> (1, 4)"""
     """_to_range('3') -> (3, 3)"""
@@ -29,13 +30,13 @@ def _to_range(text: str) -> Tuple[int, int]:
     return (items[0], items[-1])
 
 
-def _to_ranges(text: str) -> List[Tuple[int, int]]:
+def _to_ranges(text: str) -> list[tuple[int, int]]:
     """将表示一个或多个范围的字符串转为元组的列表"""
     """_to_ranges('1-4,6,8-10') -> [(1, 4), (6, 6), (8, 10)]"""
     return [_to_range(r) for r in text.split(',')]
 
 
-def _to_time_span(from_hr, from_min, to_hr, to_min) -> Tuple[datetime.time, datetime.time]:
+def _to_time_span(from_hr, from_min, to_hr, to_min) -> tuple[datetime.time, datetime.time]:
     zone = zoneinfo.ZoneInfo('Asia/Shanghai')
     return (
         datetime.time(from_hr, from_min, 0, tzinfo=zone),
@@ -61,7 +62,7 @@ time_slot_mapping = {
 
 @dataclass
 class ScheduledDates:
-    weeks: List[int]
+    weeks: list[int]
     day_of_week: Literal[1, 2, 3, 4, 5, 6, 7]
 
     def all_dates(self, semester_start_date):
@@ -88,7 +89,7 @@ def _parse_date(text: str) -> datetime.date:
     return date
 
 
-def _parse_scheduled_weeks(text: str) -> List[int]:
+def _parse_scheduled_weeks(text: str) -> list[int]:
     result = []
     for span in text.split(','):
         if '-' not in span:
@@ -109,7 +110,7 @@ def _parse_scheduled_weeks(text: str) -> List[int]:
 class ScheduleEntry:
     name: str
     dates: ScheduledDates | datetime.date
-    time_ranges: List[Tuple[datetime.time, datetime.time]]
+    time_ranges: list[tuple[datetime.time, datetime.time]]
     location: str
     kind: ScheduleEntryKind
     teacher: str = ''
@@ -124,12 +125,23 @@ class ScheduleEntry:
             print(json.dumps(obj, ensure_ascii=False))
         return r            # type: ignore
 
+    @staticmethod
+    def determine_time_slot_ranges(slot_info: str | None, slot_key: str) -> list[tuple[int, int]]:
+        k = int(slot_key)
+        if slot_info is None:
+            return [(2*k - 1, 2*k)]
+        ranges = _to_ranges(slot_info)
+        if 2*k - 1 <= ranges[0][0] <= 2*k:
+            return ranges
+        # 连课会显示在多个单元格里，这样避免创建重复日程
+        return []
+
     @classmethod
     def parse_lesson(cls, obj: dict) -> Self | None:
         pattern = r'''(?P<名称>[^\[\]]+)
 \[(?P<教师>[^\[\]]*)\]
-\[(?P<周次>[^\[\]]+)周\]\[(?P<地点>[^\[\]]*)\]
-第(?P<节次>.+)节'''
+\[(?P<周次>[^\[\]]+)周\]\[(?P<地点>[^\[\]]*)\](
+第(?P<节次>.+)节)?'''
 
         result = re.match(pattern, obj['SKSJ'])
 
@@ -139,9 +151,14 @@ class ScheduleEntry:
         name = result.group('名称')
         teacher = result.group('教师')
         location = result.group('地点')
-        time_slot_ranges = _to_ranges(result.group('节次'))
-        time_ranges = [(time_slot_mapping[t[0]][0], time_slot_mapping[t[1]][1])
-                       for t in time_slot_ranges]
+        time_slot_ranges = cls.determine_time_slot_ranges(
+            result.group('节次'),
+            obj['KEY'][6]       # '5' as in 'xq1_jc5'
+        )
+        time_ranges = [
+            (time_slot_mapping[t[0]][0], time_slot_mapping[t[1]][1])
+            for t in time_slot_ranges
+        ]
         description = ''
 
         dates = ScheduledDates(_parse_scheduled_weeks(
@@ -169,7 +186,10 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
         name = result.group('课程名称')
         lab_name = result.group('实验名称')
         location = result.group('地点')
-        time_slot_ranges = _to_ranges(result.group('节次'))
+        time_slot_ranges = cls.determine_time_slot_ranges(
+            result.group('节次'),
+            obj['KEY'][6]       # '5' as in 'xq1_jc5'
+        )
         time_ranges = [(time_slot_mapping[t[0]][0], time_slot_mapping[t[1]][1])
                        for t in time_slot_ranges]
 
@@ -198,7 +218,7 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
 
         return cls(name, _parse_date(result.group('日期')), time_ranges, location, EXAM)
 
-    def get_ics_alarms(self) -> List[ics.DisplayAlarm]:
+    def get_ics_alarms(self) -> list[ics.DisplayAlarm]:
         if self.kind == LAB:
             return [
                 ics.DisplayAlarm(datetime.timedelta(days=-2)),
@@ -246,7 +266,7 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
                 )
                 yield event
 
-    def overlaps_with(self, time_span: Tuple[datetime.time, datetime.time]):
+    def overlaps_with(self, time_span: tuple[datetime.time, datetime.time]):
         s2, e2 = time_span
         for s1, e1, in self.time_ranges:
             if max(s1, s2) < min(e1, e2):
@@ -256,10 +276,10 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
 
 @dataclass
 class Schedule:
-    entries: List[ScheduleEntry]
+    entries: list[ScheduleEntry]
 
     @classmethod
-    def from_json(cls, obj: List[dict[str, dict]]):
+    def from_json(cls, obj: list[dict[str, dict]]):
         entries = []
         for item in obj:
             if item['KEY'] == 'bz':
@@ -291,7 +311,7 @@ class Schedule:
             q_week_id: int,
             q_date: datetime.date,
             q_day_of_week: int,
-            q_time_span: Tuple[int, int]
+            q_time_span: tuple[int, int]
     ):
         for entry in self.entries:
             match entry.dates:
