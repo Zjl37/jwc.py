@@ -1,10 +1,10 @@
-
 import json
+import re
 import zoneinfo
 from . import cache
 import datetime
 
-from typing import Optional, Tuple
+from typing import Optional
 from jwc.schedule import LAB, Schedule, ScheduleEntry
 
 
@@ -31,9 +31,18 @@ def arrange(in_file: str, out_file: Optional[str], schedule: Schedule):
             print(f"[i] ignored row in phxp table with index: {i}")
             continue
         q_week_id = int(week_id)
-        q_date = datetime.datetime.strptime(date, '%Y.%m.%d')
-        q_time_span: Tuple[int, int] = \
-            tuple(map(int, time_span.split('、')))  # type: ignore
+        if type(date) == str:
+            q_date = datetime.datetime.strptime(date, '%Y.%m.%d')
+        else:
+            q_date = date
+        time_span_match = re.match(r'(\d+)(-|、)(\d+)', time_span)
+        if time_span_match is None:
+            print(
+                f"[!] time_span_match error for {time_span}, skipping this row"
+            )
+            continue
+        q_time_span: tuple[int, int] = (
+            int(time_span_match.group(1)), int(time_span_match.group(3)))
 
         conflict_entries = schedule.query_lesson_at(
             q_week_id, q_date, q_day_of_week, q_time_span

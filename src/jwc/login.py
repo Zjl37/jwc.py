@@ -91,7 +91,7 @@ def login_request(szsso_html: str, username: str, password: str):
 #     return auth_ticket_request
 
 
-def auth_login(session: requests.Session, username: str, password: str):
+def auth_login(session: requests.Session, username: str, password: str) -> tuple[bool, str]:
     try:
         bind_auth_req = goto_bind_auth()
         bind_auth_res = session.send(bind_auth_req.prepare())
