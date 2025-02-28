@@ -7,57 +7,107 @@ import datetime
 from typing import Optional
 from jwc.schedule import LAB, Schedule, ScheduleEntry
 
+import re
+import datetime
+from typing import Optional
+from openpyxl import load_workbook
+from jwc.schedule import Schedule
+
 
 def arrange(in_file: str, out_file: Optional[str], schedule: Schedule):
-    import pandas as pd
+    # Load workbook and worksheet
+    wb = load_workbook(in_file)
+    ws = wb.active
 
-    df = pd.read_excel(in_file, index_col=[0, 1, 2, 3])
+    if ws is None:
+        print(f"[!] Error: no active workseet in file!")
+        return
 
-    df.insert(len(df.columns), '冲突课程', '')
+    # Insert new conflict course column
+    original_max_col = ws.max_column
+    new_col_idx = original_max_col + 1
+    ws.insert_cols(new_col_idx)
+    ws.cell(row=1, column=new_col_idx, value='冲突课程')
 
-    for i in df.index:
-        try:
-            week_id, date, day_of_week, time_span = i
-            q_day_of_week = {
-                '周一': 1,
-                '周二': 2,
-                '周三': 3,
-                '周四': 4,
-                '周五': 5,
-                '周六': 6,
-                '周日': 7,
-            }[day_of_week]
-        except:
-            print(f"[i] ignored row in phxp table with index: {i}")
-            continue
-        q_week_id = int(week_id)
-        if type(date) == str:
-            q_date = datetime.datetime.strptime(date, '%Y.%m.%d')
+    # Initialize variables to track merged cell values
+    last_week_id = None
+    last_date = None
+    last_day_of_week = None
+
+    # Process each row
+    for row_idx in range(2, ws.max_row + 1):
+        # Handle merged cells by carrying forward values from above
+        # Week ID (column 1)
+        current_week_id = ws.cell(row=row_idx, column=1).value
+        if current_week_id is not None:
+            last_week_id = current_week_id
         else:
-            q_date = date
-        time_span_match = re.match(r'(\d+)(-|、)(\d+)', time_span)
-        if time_span_match is None:
-            print(
-                f"[!] time_span_match error for {time_span}, skipping this row"
+            current_week_id = last_week_id
+
+        # Date (column 2)
+        current_date = ws.cell(row=row_idx, column=2).value
+        if current_date is not None:
+            last_date = current_date
+        else:
+            current_date = last_date
+
+        # Day of week (column 3)
+        current_day_of_week = ws.cell(row=row_idx, column=3).value
+        if current_day_of_week is not None:
+            last_day_of_week = current_day_of_week
+        else:
+            current_day_of_week = last_day_of_week
+
+        try:
+            # Validate required fields
+            if None in (current_week_id, current_date, current_day_of_week):
+                raise ValueError("Missing index values in merged cells")
+
+            # Convert day of week to number
+            day_mapping = {
+                '周一': 1, '周二': 2, '周三': 3,
+                '周四': 4, '周五': 5, '周六': 6, '周日': 7
+            }
+            q_day_of_week = day_mapping.get(current_day_of_week)
+            if q_day_of_week is None:
+                raise ValueError(f"无效的星期格式: {current_day_of_week}")
+
+            # Parse date
+            if isinstance(current_date, str):
+                q_date = datetime.datetime.strptime(current_date, '%Y.%m.%d')
+            else:
+                q_date = current_date  # Assume datetime object
+
+            # Parse time span
+            time_span = ws.cell(row=row_idx, column=4).value
+            time_match = re.match(r'(\d+)(-|、)(\d+)', str(time_span))
+            if not time_match:
+                raise ValueError(f"无效的时间段格式: {time_span}")
+            q_time_span = (int(time_match.group(1)), int(time_match.group(3)))
+
+            # Query for conflicts
+            conflicts = schedule.query_lesson_at(
+                int(current_week_id),
+                q_date,
+                q_day_of_week,
+                q_time_span
             )
+            conflict_names = [e.lab_name or e.name for e in conflicts]
+            ws.cell(row=row_idx, column=new_col_idx,
+                    value='，'.join(conflict_names))
+
+        except Exception as e:
+            print(f"[i] 跳过第 {row_idx} 行，原因: {str(e)}")
             continue
-        q_time_span: tuple[int, int] = (
-            int(time_span_match.group(1)), int(time_span_match.group(3)))
 
-        conflict_entries = schedule.query_lesson_at(
-            q_week_id, q_date, q_day_of_week, q_time_span
-        )
+    # Handle output filename
+    if not out_file:
+        parts = in_file.rsplit('.', 1)
+        out_file = f"{parts[0]}+arranged.xlsx" if len(
+            parts) > 1 else f"{in_file}+arranged"
 
-        conflict_names = map(lambda e: e.lab_name or e.name, conflict_entries)
-
-        df.at[i, '冲突课程'] = '，'.join(conflict_names)
-
-    if out_file is None:
-        sections = in_file.split('.')
-        sections[-2] = sections[-2] + '+arranged'
-        out_file = '.'.join(sections)
-
-    df.to_excel(out_file)
+    # Save with original formatting
+    wb.save(out_file)
     print(f"[i] 输出文件已写到 {out_file}")
 
 
