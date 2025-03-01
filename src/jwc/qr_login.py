@@ -1,15 +1,13 @@
 import requests
 from bs4 import BeautifulSoup as bs
 
-# import matplotlib.pyplot as plt
-
 HITIDS_HOST = "https://ids.hit.edu.cn"
 SZSSO_HOST = "https://sso.hitsz.edu.cn:7002"
 
 
 def get_qrcode(session: requests.Session):
     """
-    从认证服务器获取二维码及其关联的 token。
+    从认证服务器获取二维码 token。
 
     参数:
         session (requests.Session): 当前的session对象。
@@ -21,20 +19,35 @@ def get_qrcode(session: requests.Session):
         Exception: 如果在获取二维码 token 或二维码时发生错误。
 
     """
-    try:
-        qr_token_res = session.get(HITIDS_HOST + "/authserver/qrCode/getToken")
-        if not qr_token_res.ok:
-            raise Exception("获取二维码 token 失败")
-        qr_token = qr_token_res.content.decode("utf-8")
-        qr_code = session.get(
-            HITIDS_HOST + f"/authserver/qrCode/getCode?uuid={qr_token}"
-        )
-        if not qr_code.ok:
-            raise Exception("获取二维码失败")
-        return qr_token, qr_code.content
+    qr_token_res = session.get(HITIDS_HOST + "/authserver/qrCode/getToken")
+    if not qr_token_res.ok:
+        raise Exception("获取二维码 token 失败")
+    qr_token = qr_token_res.text
+    return qr_token
 
-    except Exception as e:
+
+def get_qrcode_image(session: requests.Session, qr_token: str):
+    """
+    从认证服务器获取指定 token 的二维码图像。
+
+    参数:
+        session (requests.Session): 当前的session对象。
+
+    返回:
+        二维码图像 (bytes)
+
+    异常:
+        Exception: 如果在获取二维码时发生错误。
+
+    """
+    qr_code_img = session.get(
+        HITIDS_HOST + f"/authserver/qrCode/getCode?uuid={qr_token}"
+    )
+    if not qr_code_img.ok:
         raise Exception("获取二维码失败")
+    if type(qr_code_img.content) != bytes:
+        raise Exception("获取二维码图像异常")
+    return qr_code_img.content
 
 
 def go_auth(session: requests.Session, excution: str, qr_token: str):
@@ -70,6 +83,24 @@ def go_auth(session: requests.Session, excution: str, qr_token: str):
         raise Exception("认证失败")
 
 
+def get_status(session: requests.Session, qr_token: str):
+    """
+    检查二维码 token 的登录状态
+
+    返回：
+        0 —— 未扫码
+        1 —— 已确认登录
+        2 —— 已扫码
+        3 —— 已失效
+    """
+    status_res = session.post(
+        HITIDS_HOST + f"/authserver/qrCode/getStatus.htl?uuid={qr_token}"
+    )
+    if not status_res.ok:
+        raise Exception("获取二维码 token 状态失败")
+    return status_res.text
+
+
 def login(session: requests.Session, qr_token: str):
     """
     在二维码上确认登录之后，使用二维码渠道登录系统。
@@ -94,27 +125,9 @@ def login(session: requests.Session, qr_token: str):
         if excution is None:
             raise Exception("未找到 excution")
         excution = excution["value"]
-        print(excution)
         if type(excution) != str:
             raise Exception("excution 异常")
         go_auth(session, excution, qr_token)
         return True, "登录成功"
     except Exception as e:
         return False, str(e)
-
-# if __name__ == "__main__":
-#     proxy = {
-#         "http": "http://127.0.0.1:7723",
-#         "https": "http://127.0.0.1:7723"
-#     }
-#     session = requests.Session()
-#     session.proxies = proxy
-#     session.verify = False
-#     QRcode = get_qrcode(session)
-#     with open("QRcode.png", "wb") as f:
-#         f.write(QRcode[1])
-#     img = plt.imread("QRcode.png")
-#     plt.imshow(img)
-#     plt.show()
-#     # input()
-#     # print(login(session, QRcode[0]))
