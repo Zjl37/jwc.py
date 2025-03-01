@@ -1,6 +1,8 @@
 from collections.abc import Mapping, Sequence
 import json
 import datetime
+from ntpath import getmtime
+import time
 from typing import TypeAlias, cast
 import click
 import requests
@@ -127,7 +129,25 @@ def xszykbzong(path: str = "", text: str = "") -> JSON_ro:
 
     if path == "":
         path = f'{jwc_cache_dir()}/response-queryxszykbzong.json'
-    if not os.path.isfile(path):
+
+    def should_fetch():
+        if not os.path.isfile(path):
+            return True
+
+        now = time.time()
+        DAY = 24 * 60 * 60          # seconds
+        stale_time = now - os.path.getmtime(path)
+
+        if stale_time > 7*DAY:
+            ans = click.prompt(  # pyright: ignore [reportAny]
+                f"[?] 缓存中的课表已有 {int(stale_time)//DAY} 天未更新，要重新获取吗？[Y/n]",
+                default='y',
+                type=str,
+                show_default=False
+            )
+            return not cast(str, ans).lower().startswith('n')
+
+    if should_fetch():
         request_xszykbzong()
 
     with open(path) as json_file:
