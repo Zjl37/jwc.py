@@ -1,6 +1,6 @@
 [project]
 name = "jwc"
-version = "0.2.0"
+version = "0.2.1"
 description = "Default template for PDM package"
 authors = [
     {name = "Zjl37", email = "2693911885@qq.com"},

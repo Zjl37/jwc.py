@@ -1,20 +1,15 @@
 import json
 import re
+from typing import IO
 import zoneinfo
-from . import cache
-import datetime
-
-from typing import Optional
-from jwc.schedule import LAB, Schedule, ScheduleEntry
-
-import re
-import datetime
-from typing import Optional
 from openpyxl import load_workbook
-from jwc.schedule import Schedule
+import datetime
+
+import openpyxl.utils
+from ..schedule import LAB, Schedule, ScheduleEntry
 
 
-def arrange(in_file: str, out_file: Optional[str], schedule: Schedule):
+def arrange(in_file: str | IO[bytes], out_file: str | None, schedule: Schedule):
     # Load workbook and worksheet
     wb = load_workbook(in_file)
     ws = wb.active
@@ -27,15 +22,18 @@ def arrange(in_file: str, out_file: Optional[str], schedule: Schedule):
     original_max_col = ws.max_column
     new_col_idx = original_max_col + 1
     ws.insert_cols(new_col_idx)
-    ws.cell(row=1, column=new_col_idx, value='冲突课程')
 
     # Initialize variables to track merged cell values
     last_week_id = None
     last_date = None
     last_day_of_week = None
 
+    header_row = 1
+    while header_row <= ws.max_row and type(ws.cell(header_row+1, 1).value) != int and '周次' not in str(ws.cell(header_row, 1).value):
+        header_row += 1
+
     # Process each row
-    for row_idx in range(2, ws.max_row + 1):
+    for row_idx in range(header_row+1, ws.max_row + 1):
         # Handle merged cells by carrying forward values from above
         # Week ID (column 1)
         current_week_id = ws.cell(row=row_idx, column=1).value
@@ -99,6 +97,10 @@ def arrange(in_file: str, out_file: Optional[str], schedule: Schedule):
         except Exception as e:
             print(f"[i] 跳过第 {row_idx} 行，原因: {str(e)}")
             continue
+
+    ws.cell(row=header_row, column=new_col_idx, value='冲突课程')
+    col_letter = openpyxl.utils.get_column_letter(new_col_idx)
+    ws.auto_filter.ref = f"{col_letter}{header_row}:{col_letter}{ws.max_row}"
 
     # Handle output filename
     if not out_file:
