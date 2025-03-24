@@ -1,19 +1,20 @@
 from collections.abc import Mapping, Sequence
 import json
 import datetime
-from ntpath import getmtime
 import time
 from typing import TypeAlias, cast
 import click
 import requests
 import os
+import fake_useragent
 
-JSON_ro: TypeAlias = Mapping[str, "JSON_ro"] \
-    | Sequence["JSON_ro"] | str | int | float | bool | None
+JSON_ro: TypeAlias = (
+    Mapping[str, "JSON_ro"] | Sequence["JSON_ro"] | str | int | float | bool | None
+)
 
 
 def jwc_cache_dir():
-    dir = './jwc-cache'
+    dir = "./jwc-cache"
     if not os.path.isdir(dir):
         os.makedirs(dir)
     return dir
@@ -22,104 +23,188 @@ def jwc_cache_dir():
 globalSession: requests.Session | None = None  # type: ignore
 
 
-def init_session(session: requests.Session | None = globalSession, force: bool = False) -> requests.Session:
+def cli_auth_cookie(session: requests.Session):
+    # Cookie
+    session.headers.update(
+        {
+            "Pragma": "no-cache",
+            "Proxy-Connection": "keep-alive",
+            "X-Requested-With": "XMLHttpRequest",
+            "Cookie": click.prompt(
+                "输入本研教学管理与服务平台的 Cookie，形如“route=???; JSESSIONID=???”",
+                hide_input=True,
+            ),
+        }
+    )
+
+
+def cli_auth_idshit_pwd(session: requests.Session):
+    # 本部统一身份认证平台（密码登录）
+    click.echo("=== 正在代为你登录*本部*统一身份认证平台 ===")
+
+    from jwc.idshit_pwd_login import auth_login, check_need_captcha
+
+    username: str = click.prompt("请输入用户名（学号）", prompt_suffix="：")
+
+    try:
+        need_captcha = check_need_captcha(session, username)
+    except:
+        click.secho("[!] 无法获取 need capcha 信息！请检查网络。", fg="yellow")
+        raise
+
+    if need_captcha:
+        msg = "[!] 你的账号当前需要安全验证，动量神蚣 CLI 无法代为你完成密码登录。请你用浏览器自行完成一次登录后再尝试使用此工具，或改用扫码登录方式。"
+        click.secho(msg, bg="black", fg="yellow")
+        raise NotImplementedError(msg)
+
+    password: str = click.prompt("请输入密码", prompt_suffix="：", hide_input=True)
+
+    success, msg = auth_login(session, username.strip(), password)
+    if not success:
+        click.echo("[!] " + msg)
+        session = None
+        raise Exception(msg)
+    click.echo("[i] " + msg)
+
+
+def cli_auth_szsso(session: requests.Session):
+    """
+    深圳校区统一身份认证系统（密码登录）〔已失效，请勿使用！〕
+    """
+    click.echo("=== 正在代为你登录*深圳校区*统一身份认证系统 ===")
+    username: str = click.prompt("请输入用户名（学号）", prompt_suffix="：")
+    password: str = click.prompt("请输入密码", prompt_suffix="：", hide_input=True)
+
+    from jwc.szsso_login import auth_login
+
+    success, msg = auth_login(session, username.strip(), password)
+    if not success:
+        click.echo("[!] " + msg)
+        session = None
+        raise Exception(msg)
+    click.echo("[i] " + msg)
+
+
+def cli_auth_union_szsso(session: requests.Session):
+    """
+    本部统一身份认证平台联合登录，跳转深圳校区统一身份认证系统（密码登录）〔已失效，请勿使用！〕
+    """
+    # 深圳校区统一身份认证系统（密码登录）
+    click.echo("=== 正在代为你登录*深圳校区*统一身份认证系统 ===")
+    username: str = click.prompt("请输入用户名（学号）", prompt_suffix="：")
+    password: str = click.prompt("请输入密码", prompt_suffix="：", hide_input=True)
+
+    from jwc.login import auth_login
+
+    success, msg = auth_login(session, username.strip(), password)
+    if not success:
+        click.echo("[!] " + msg)
+        session = None
+        raise Exception(msg)
+    click.echo("[i] " + msg)
+
+
+def cli_auth_qr(session: requests.Session):
+    # 本部统一身份认证平台（哈工大APP扫码）
+    click.echo("=== 正在代为你登录*本部*统一身份认证平台 ===")
+
+    from jwc.qr_login import (
+        get_qrcode,
+        get_qrcode_image,
+        HITIDS_HOST,
+        get_status,
+        login,
+    )
+
+    qr_token = get_qrcode(session)
+    click.echo("[i] 请用哈工大APP扫描以下二维码：")
+    click.echo(HITIDS_HOST + "/authserver/qrCode/getCode?uuid=" + qr_token)
+
+    qr_img = get_qrcode_image(session, qr_token)
+    from PIL import Image
+    import io
+
+    qr_img = Image.open(io.BytesIO(qr_img))
+    from textual_image.renderable import Image
+    import rich
+
+    rich.print(Image(qr_img))
+
+    login_status = "0"
+    while login_status != "1":
+        click.prompt(
+            "当你在移动设备上确认登录后，按下回车", prompt_suffix="：", default=""
+        )
+        login_status = get_status(session, qr_token)
+        if login_status == "0":
+            click.echo("[i] 尚未扫码！")
+        elif login_status == "2":
+            click.echo("[i] 请在移动设备上确认登录。")
+        elif login_status != "1":
+            click.echo("[!] 二维码已失效，请重试。")
+            if login_status != "3":
+                click.echo(
+                    f'[!] 未知的 login_status "{login_status}"，请向开发者报告此情况。'
+                )
+            raise Exception("二维码已失效")
+
+    success, msg = login(session, qr_token)
+    if not success:
+        click.echo("[!] " + msg)
+        session = None
+        raise Exception(msg)
+    click.echo("[i] " + msg)
+
+
+def init_session(
+    session: requests.Session | None = globalSession, force: bool = False
+) -> requests.Session:
     # global session
     if not force and session is not None:
         return session
 
     session = requests.Session()
 
+    session.headers.update(
+        {"User-Agent": fake_useragent.UserAgent(platforms="desktop").random}
+    )
+
     auth_choice: str = click.prompt(
         """认证方式？
-        [1] 本部统一身份认证平台（哈工大APP扫码）
-        [2] 深圳校区统一身份认证系统（密码登录）
+        [1] 本部统一身份认证平台（哈工大APP扫码）〔推荐〕
+        [2] 本部统一身份认证平台（密码登录）
         [3] Cookie
-        """, prompt_suffix='> ')
+        """,
+        prompt_suffix="> ",
+    )
 
-    if auth_choice.strip().startswith('3'):
-        # Cookie
-        session.headers.update({
-            'Pragma': 'no-cache',
-            'Proxy-Connection': 'keep-alive',
-            'X-Requested-With': 'XMLHttpRequest',
-            'Cookie': click.prompt("输入本研教学管理与服务平台的 Cookie，形如“route=???; JSESSIONID=???”", hide_input=True)
-        })
-        return session
-    elif auth_choice.strip().startswith('2'):
-        # 深圳校区统一身份认证系统（密码登录）
-        click.echo("=== 正在代为你登录*深圳校区*统一身份认证系统 ===")
-        username: str = click.prompt("请输入用户名（学号）", prompt_suffix="：")
-        password: str = click.prompt(
-            "请输入密码", prompt_suffix="：", hide_input=True
-        )
-
-        from jwc.login import auth_login
-        success, msg = auth_login(session, username.strip(), password)
-        if success:
-            click.echo('[i] ' + msg)
-            return session
-        click.echo('[!] ' + msg)
-        session = None
-        raise Exception(msg)
+    if auth_choice.strip().startswith("3"):
+        cli_auth_cookie(session)
+    elif auth_choice.strip().startswith("2"):
+        cli_auth_idshit_pwd(session)
     else:
-        # 本部统一身份认证平台（哈工大APP扫码）
-        click.echo("=== 正在代为你登录*本部*统一身份认证平台 ===")
+        cli_auth_qr(session)
 
-        from jwc.qr_login import get_qrcode, get_qrcode_image, HITIDS_HOST, get_status, login
-
-        qr_token = get_qrcode(session)
-        click.echo("[i] 请用哈工大APP扫描以下二维码：")
-        click.echo(HITIDS_HOST + "/authserver/qrCode/getCode?uuid=" + qr_token)
-
-        qr_img = get_qrcode_image(session, qr_token)
-        from PIL import Image
-        import io
-        qr_img = Image.open(io.BytesIO(qr_img))
-        from textual_image.renderable import Image
-        import rich
-        rich.print(Image(qr_img))
-
-        login_status = '0'
-        while login_status != '1':
-            click.prompt("当你在移动设备上确认登录后，按下回车", prompt_suffix="：", default='')
-            login_status = get_status(session, qr_token)
-            if login_status == '0':
-                click.echo('[i] 尚未扫码！')
-            elif login_status == '2':
-                click.echo('[i] 请在移动设备上确认登录。')
-            elif login_status != '1':
-                click.echo('[!] 二维码已失效，请重试。')
-                if login_status != '3':
-                    click.echo(
-                        f'[!] 未知的 login_status "{login_status}"，请向开发者报告此情况。')
-                raise Exception("二维码已失效")
-
-        success, msg = login(session, qr_token)
-        if success:
-            click.echo('[i] ' + msg)
-            return session
-        click.echo('[!] ' + msg)
-        session = None
-        raise Exception(msg)
+    return session
 
 
 def request_xszykbzong():
     session = init_session()
 
-    request_data = {'xn': '2024-2025', 'xq': '2'}
+    request_data = {"xn": "2024-2025", "xq": "2"}
 
     response = session.post(
-        url='http://jw.hitsz.edu.cn/xszykb/queryxszykbzong',
+        url="http://jw.hitsz.edu.cn/xszykb/queryxszykbzong",
         data=request_data,
-        verify=False
+        verify=False,
     )
 
     if response.ok:
-        print(f'[i] 已更新 xszykbzong')
-        with open(f'{jwc_cache_dir()}/response-queryxszykbzong.json', 'w') as file:
+        print(f"[i] 已更新 xszykbzong")
+        with open(f"{jwc_cache_dir()}/response-queryxszykbzong.json", "w") as file:
             _ = file.write(response.text)
     else:
-        print(f'[!] 在请求 queryxszykbzong 时出错了：{response.status_code}')
+        print(f"[!] 在请求 queryxszykbzong 时出错了：{response.status_code}")
 
 
 def xszykbzong(path: str = "", text: str = "") -> JSON_ro:
@@ -128,24 +213,24 @@ def xszykbzong(path: str = "", text: str = "") -> JSON_ro:
         return cast(JSON_ro, json.loads(text))
 
     if path == "":
-        path = f'{jwc_cache_dir()}/response-queryxszykbzong.json'
+        path = f"{jwc_cache_dir()}/response-queryxszykbzong.json"
 
     def should_fetch():
         if not os.path.isfile(path):
             return True
 
         now = time.time()
-        DAY = 24 * 60 * 60          # seconds
+        DAY = 24 * 60 * 60  # seconds
         stale_time = now - os.path.getmtime(path)
 
-        if stale_time > 7*DAY:
+        if stale_time > 7 * DAY:
             ans = click.prompt(  # pyright: ignore [reportAny]
-                f"[?] 缓存中的课表已有 {int(stale_time)//DAY} 天未更新，要重新获取吗？[Y/n]",
-                default='y',
+                f"[?] 缓存中的课表已有 {int(stale_time) // DAY} 天未更新，要重新获取吗？[Y/n]",
+                default="y",
                 type=str,
-                show_default=False
+                show_default=False,
             )
-            return not cast(str, ans).lower().startswith('n')
+            return not cast(str, ans).lower().startswith("n")
 
     if should_fetch():
         request_xszykbzong()

@@ -1,7 +1,7 @@
 [project]
 name = "jwc"
-version = "0.2.1"
-description = "Default template for PDM package"
+version = "0.3.0"
+description = "将某校教务平台的课表转为 ICS 日历"
 authors = [
     {name = "Zjl37", email = "2693911885@qq.com"},
 ]
@@ -16,6 +16,8 @@ dependencies = [
     "beautifulsoup4>=4.12.3",
     "html5lib>=1.1",
     "textual-image>=0.7.0",
+    "cryptography>=44.0.2",
+    "fake-useragent>=2.1.0",
 ]
 requires-python = ">=3.10"
 readme = "README.md"

@@ -279,8 +279,8 @@ class Schedule:
     entries: list[ScheduleEntry]
 
     @classmethod
-    def from_json(cls, obj: list[dict[str, dict]]):
-        entries = []
+    def from_json(cls, obj: list[dict[str, dict]], error_entries: set[str] | None = None):
+        entries: list[ScheduleEntry] = []
         for item in obj:
             if item['KEY'] == 'bz':
                 # 忽略备注条目
@@ -289,11 +289,12 @@ class Schedule:
             try:
                 entry = ScheduleEntry.parse_exam(item) or ScheduleEntry.parse_lab(item) \
                     or ScheduleEntry.parse_lesson(item)
-            except Exception:
+            except Exception as e:
+                print(f'[!] Error while parsing entry: {e}')
                 print(traceback.format_exc())
             if entry is None:
-                print(json.dumps(item, ensure_ascii=False))
-                click.secho(f'[!] 遇到无法解析的课表条目。上述课程将不会添加到生成的日历中。', fg='red')
+                if error_entries is not None:
+                    error_entries.add(json.dumps(item, ensure_ascii=False))
                 continue
             entries.append(entry)
         return cls(entries)

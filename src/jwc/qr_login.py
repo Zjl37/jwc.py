@@ -121,13 +121,13 @@ def login(session: requests.Session, qr_token: str):
             + "/authserver/login?service=http%3A%2F%2Fjw.hitsz.edu.cn%2FcasLogin"
         ).text
         soup = bs(html_doc, "html5lib")
-        excution = soup.select_one("#qrLoginForm > input[name='execution']")
-        if excution is None:
+        execution = soup.select_one("#qrLoginForm > input[name='execution']")
+        if execution is None:
             raise Exception("未找到 excution")
-        excution = excution["value"]
-        if type(excution) != str:
+        execution = execution["value"]
+        if type(execution) != str:
             raise Exception("excution 异常")
-        go_auth(session, excution, qr_token)
+        go_auth(session, execution, qr_token)
         return True, "登录成功"
     except Exception as e:
         return False, str(e)
