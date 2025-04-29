@@ -156,12 +156,11 @@ def cli_auth_qr(session: requests.Session):
     click.echo("[i] " + msg)
 
 
-def init_session(
-    session: requests.Session | None = globalSession, force: bool = False
-) -> requests.Session:
-    # global session
-    if not force and session is not None:
-        return session
+def init_session(force: bool = False) -> requests.Session:
+    global globalSession
+
+    if not force and globalSession is not None:
+        return globalSession
 
     session = requests.Session()
 
@@ -185,7 +184,7 @@ def init_session(
     else:
         cli_auth_qr(session)
 
-    return session
+    return (globalSession := session)
 
 
 def request_xszykbzong():
@@ -239,9 +238,54 @@ def xszykbzong(path: str = "", text: str = "") -> JSON_ro:
         return cast(JSON_ro, json.load(json_file))
 
 
-def semester_start_date():
-    # TODO: 从网页请求
-    # return datetime.date(2024, 3, 4)
-    # return datetime.date(2024, 7, 8)
-    # return datetime.date(2024, 8, 26)
-    return datetime.date(2025, 2, 24)
+def request_semester_start_date():
+    session = init_session()
+
+    # 调用获取校历的接口
+    response = session.post(
+        url="http://jw.hitsz.edu.cn/component/queryRlZcSj",
+        data={"xn": "2024-2025", "xq": "2", "djz": "1"},
+        verify=False,
+    )
+
+    if response.ok:
+        data = response.json()
+        # 找到星期一（xqj=1）的日期
+        for entry in data.get("content", []):
+            if entry.get("xqj") == "1":
+                start_date = datetime.datetime.strptime(entry["rq"], "%Y-%m-%d").date()
+                with open(f"{jwc_cache_dir()}/semester_start_date.txt", "w") as f:
+                    f.write(start_date.isoformat())
+                return start_date
+        raise ValueError("未找到第一周星期一的日期")
+    else:
+        raise ConnectionError(f"获取学期开始日期失败: {response.status_code}")
+
+
+def semester_start_date() -> datetime.date:
+    """动态获取学期开始日期"""
+    cache_file = f"{jwc_cache_dir()}/semester_start_date.txt"
+
+    # 如果缓存存在且有效
+    if os.path.exists(cache_file) and os.path.getmtime(cache_file) >= os.path.getmtime(
+        f"{jwc_cache_dir()}/response-queryxszykbzong.json"
+    ):
+        try:
+            with open(cache_file) as f:
+                return datetime.date.fromisoformat(f.read().strip())
+        except:
+            pass
+
+    # 否则请求接口并缓存
+    try:
+        d0 = request_semester_start_date()
+        click.secho(f"[i] 获取到学期开始日期: {d0.strftime('%Y-%m-%d')}", fg="green")
+        return d0
+    except Exception as e:
+        click.secho(f"[!] 自动获取学期开始日期失败: {e}", fg="yellow")
+        click.secho("[!] 将使用预置的日期，如有误请联系开发者更新配置", fg="yellow")
+        # 保底返回已知日期
+        # return datetime.date(2024, 3, 4)
+        # return datetime.date(2024, 7, 8)
+        # return datetime.date(2024, 8, 26)
+        return datetime.date(2025, 2, 24)

@@ -277,9 +277,11 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
 @dataclass
 class Schedule:
     entries: list[ScheduleEntry]
+    start_date: datetime.date
 
     @classmethod
-    def from_json(cls, obj: list[dict[str, dict]], error_entries: set[str] | None = None):
+    def from_json(cls, obj: list[dict[str, dict]], error_entries: set[str] | None = None,
+                start_date: datetime.date | None = None):
         entries: list[ScheduleEntry] = []
         for item in obj:
             if item['KEY'] == 'bz':
@@ -297,14 +299,12 @@ class Schedule:
                     error_entries.add(json.dumps(item, ensure_ascii=False))
                 continue
             entries.append(entry)
-        return cls(entries)
+        return cls(entries, start_date or cache.semester_start_date())
 
     def to_ics(self) -> ics.Calendar:
         cal = ics.Calendar()
-        d0 = cache.semester_start_date()
-
         for entry in self.entries:
-            cal.events.update(entry.to_ics_event(d0))
+            cal.events.update(entry.to_ics_event(self.start_date))
         return cal
 
     def query_lesson_at(

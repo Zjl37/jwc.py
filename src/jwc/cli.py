@@ -16,6 +16,7 @@ def cli():
 def fetch(**kwargs):
     """更新中间文件的缓存"""
     cache.request_xszykbzong()
+    _ = cache.request_semester_start_date()
     click.echo("[i] 缓存已更新")
 
 
@@ -25,7 +26,9 @@ def to_ics(out_file):
     """【教务课表导出】由课程表生成 ics 日历文件"""
     json = cache.xszykbzong()
     error_entries: set[str] = set()
-    schedule = Schedule.from_json(json, error_entries)
+    # 获取动态学期开始日期
+    start_date = cache.semester_start_date()
+    schedule = Schedule.from_json(json, error_entries, start_date=start_date)
     if error_entries:
         click.secho(
             f"[!] 遇到无法解析的课表条目。以下课程将不会添加到生成的日历中。", fg="red"
