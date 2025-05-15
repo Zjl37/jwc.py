@@ -289,3 +289,71 @@ def semester_start_date() -> datetime.date:
         # return datetime.date(2024, 7, 8)
         # return datetime.date(2024, 8, 26)
         return datetime.date(2025, 2, 24)
+
+
+def request_XsksByxhList():
+    session = init_session()
+    q = {
+        "ppylx": "",
+        "pkkyx": "",
+        "pxn": "2024-2025",
+        "pxq": "2",
+    }
+
+    resp = request_XsksByxhList_page(session, q, 1)
+
+    l = resp["list"]
+    for i in range(2, resp["navigateLastPage"] + 1):
+        l += request_XsksByxhList_page(session, q, i)
+
+    print(f"[i] 已更新 XsksByxhList")
+    with open(f"{jwc_cache_dir()}/response-queryXsksByxhList.json", "w") as file:
+        _ = file.write(json.dumps(l, ensure_ascii=False))
+
+
+def request_XsksByxhList_page(session, q, page):
+    request_data = q | {
+        "pageNum": str(page),
+        "pageSize": "100",
+    }
+
+    response = session.post(
+        url="http://jw.hitsz.edu.cn/kscxtj/queryXsksByxhList",
+        data=request_data,
+        verify=False,
+    )
+    if not response.ok:
+        print(f"[!] 在请求 queryxszykbzong 时出错了：{response.status_code}")
+    return response.json()
+
+
+def XsksByxhList(path: str = "", text: str = "") -> list[dict]:
+    """返回缓存的 queryXsksByxhList 的 JSON 对象，如未找到则向服务器请求"""
+    if text != "":
+        return json.loads(text)
+
+    if path == "":
+        path = f"{jwc_cache_dir()}/response-queryXsksByxhList.json"
+
+    def should_fetch():
+        if not os.path.isfile(path):
+            return True
+
+        now = time.time()
+        DAY = 24 * 60 * 60  # seconds
+        stale_time = now - os.path.getmtime(path)
+
+        if stale_time > 7 * DAY:
+            ans = click.prompt(  # pyright: ignore [reportAny]
+                f"[?] 缓存中的考试安排已有 {int(stale_time) // DAY} 天未更新，要重新获取吗？[Y/n]",
+                default="y",
+                type=str,
+                show_default=False,
+            )
+            return not cast(str, ans).lower().startswith("n")
+
+    if should_fetch():
+        request_XsksByxhList()
+
+    with open(path) as json_file:
+        return cast(JSON_ro, json.load(json_file))

@@ -13,34 +13,36 @@ from . import cache
 from . import preprocess
 
 
-ScheduleEntryKind = Enum('ScheduleEntryKind', ['LESSON', 'EXAM', 'LAB'])
+ScheduleEntryKind = Enum("ScheduleEntryKind", ["LESSON", "EXAM", "LAB"])
 LESSON, EXAM, LAB = ScheduleEntryKind
 
 
 def get_calendar_name(kind: ScheduleEntryKind = LESSON):
     # TODO: determine semester dynamically
-    return f'25春{"考试" if kind == EXAM else "课程"} - {datetime.date.today().strftime("%m月%d日")}更新'
+    return f"25春{'考试' if kind == EXAM else '课程'} - {datetime.date.today().strftime('%m月%d日')}更新"
 
 
 def _to_range(text: str) -> tuple[int, int]:
     """将表示范围的字符串转为元组"""
     """_to_range('1-4') -> (1, 4)"""
     """_to_range('3') -> (3, 3)"""
-    items = list(map(int, text.split('-')))
+    items = list(map(int, text.split("-")))
     return (items[0], items[-1])
 
 
 def _to_ranges(text: str) -> list[tuple[int, int]]:
     """将表示一个或多个范围的字符串转为元组的列表"""
     """_to_ranges('1-4,6,8-10') -> [(1, 4), (6, 6), (8, 10)]"""
-    return [_to_range(r) for r in text.split(',')]
+    return [_to_range(r) for r in text.split(",")]
 
 
-def _to_time_span(from_hr, from_min, to_hr, to_min) -> tuple[datetime.time, datetime.time]:
-    zone = zoneinfo.ZoneInfo('Asia/Shanghai')
+def _to_time_span(
+    from_hr, from_min, to_hr, to_min
+) -> tuple[datetime.time, datetime.time]:
+    zone = zoneinfo.ZoneInfo("Asia/Shanghai")
     return (
         datetime.time(from_hr, from_min, 0, tzinfo=zone),
-        datetime.time(to_hr, to_min, 0, tzinfo=zone)
+        datetime.time(to_hr, to_min, 0, tzinfo=zone),
     )
 
 
@@ -56,7 +58,7 @@ time_slot_mapping = {
     9: _to_time_span(18, 45, 19, 35),
     10: _to_time_span(19, 40, 20, 30),
     11: _to_time_span(20, 45, 21, 35),
-    12: _to_time_span(21, 40, 22, 30)
+    12: _to_time_span(21, 40, 22, 30),
 }
 
 
@@ -67,8 +69,8 @@ class ScheduledDates:
 
     def all_dates(self, semester_start_date):
         return (
-            semester_start_date +
-            datetime.timedelta(days=7 * (week - 1) + (self.day_of_week - 1))
+            semester_start_date
+            + datetime.timedelta(days=7 * (week - 1) + (self.day_of_week - 1))
             for week in self.weeks
         )
 
@@ -79,7 +81,7 @@ class ScheduledDates:
 def _parse_date(text: str) -> datetime.date:
     """根据当前学年，解析缺少年份的日期"""
     d0 = cache.semester_start_date()
-    result = re.match(r'(\d+)月(\d+)日', text)
+    result = re.match(r"(\d+)月(\d+)日", text)
     if result is None:
         raise ValueError(f'_parse_date: 无法解析 "{text}"')
     mmdd = result.groups()
@@ -91,18 +93,18 @@ def _parse_date(text: str) -> datetime.date:
 
 def _parse_scheduled_weeks(text: str) -> list[int]:
     result = []
-    for span in text.split(','):
-        if '-' not in span:
+    for span in text.split(","):
+        if "-" not in span:
             result.append(int(span))
-        elif span[-1] == '双':
-            w0, w1 = map(int, span[:-1].split('-'))
-            result.extend(filter(lambda x: x % 2 == 0, range(w0, w1+1)))
-        elif span[-1] == '单':
-            w0, w1 = map(int, span[:-1].split('-'))
-            result.extend(filter(lambda x: x % 2 == 1, range(w0, w1+1)))
+        elif span[-1] == "双":
+            w0, w1 = map(int, span[:-1].split("-"))
+            result.extend(filter(lambda x: x % 2 == 0, range(w0, w1 + 1)))
+        elif span[-1] == "单":
+            w0, w1 = map(int, span[:-1].split("-"))
+            result.extend(filter(lambda x: x % 2 == 1, range(w0, w1 + 1)))
         else:
-            w0, w1 = map(int, span.split('-'))
-            result.extend(range(w0, w1+1))
+            w0, w1 = map(int, span.split("-"))
+            result.extend(range(w0, w1 + 1))
     return result
 
 
@@ -113,110 +115,151 @@ class ScheduleEntry:
     time_ranges: list[tuple[datetime.time, datetime.time]]
     location: str
     kind: ScheduleEntryKind
-    teacher: str = ''
-    description: str = ''
-    lab_name: str = ''
+    teacher: str = ""
+    description: str = ""
+    lab_name: str = ""
 
     @staticmethod
     def parse_day_of_week(obj: dict) -> Literal[1, 2, 3, 4, 5, 6, 7]:
-        r = int(obj['KEY'][2])
+        r = int(obj["KEY"][2])
         if r not in [1, 2, 3, 4, 5, 6, 7]:
             print(f"[!] warning: weird day_of_week {r} on this entry:")
             print(json.dumps(obj, ensure_ascii=False))
-        return r            # type: ignore
+        return r  # type: ignore
 
     @staticmethod
-    def determine_time_slot_ranges(slot_info: str | None, slot_key: str) -> list[tuple[int, int]]:
+    def determine_time_slot_ranges(
+        slot_info: str | None, slot_key: str
+    ) -> list[tuple[int, int]]:
         k = int(slot_key)
         if slot_info is None:
-            return [(2*k - 1, 2*k)]
+            return [(2 * k - 1, 2 * k)]
         ranges = _to_ranges(slot_info)
-        if 2*k - 1 <= ranges[0][0] <= 2*k:
+        if 2 * k - 1 <= ranges[0][0] <= 2 * k:
             return ranges
         # 连课会显示在多个单元格里，这样避免创建重复日程
         return []
 
     @classmethod
     def parse_lesson(cls, obj: dict) -> Self | None:
-        pattern = r'''(?P<名称>[^\[\]]+)
+        pattern = r"""(?P<名称>[^\[\]]+)
 \[(?P<教师>[^\[\]]*)\]
 \[(?P<周次>[^\[\]]+)周\]\[(?P<地点>[^\[\]]*)\](
-第(?P<节次>.+)节)?'''
+第(?P<节次>.+)节)?"""
 
-        result = re.match(pattern, obj['SKSJ'])
+        result = re.match(pattern, obj["SKSJ"])
 
         if result is None:
             return None
 
-        name = result.group('名称')
-        teacher = result.group('教师')
-        location = result.group('地点')
+        name = result.group("名称")
+        teacher = result.group("教师")
+        location = result.group("地点")
         time_slot_ranges = cls.determine_time_slot_ranges(
-            result.group('节次'),
-            obj['KEY'][6]       # '5' as in 'xq1_jc5'
+            result.group("节次"),
+            obj["KEY"][6],  # '5' as in 'xq1_jc5'
         )
         time_ranges = [
             (time_slot_mapping[t[0]][0], time_slot_mapping[t[1]][1])
             for t in time_slot_ranges
         ]
-        description = ''
+        description = ""
 
-        dates = ScheduledDates(_parse_scheduled_weeks(
-            result.group('周次')), cls.parse_day_of_week(obj))
+        dates = ScheduledDates(
+            _parse_scheduled_weeks(result.group("周次")), cls.parse_day_of_week(obj)
+        )
 
-        if obj['FILEURL'] is not None:
+        if obj["FILEURL"] is not None:
             description = f"""【课程交流码】
-http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
-{obj['KCWZSM'] or ''}"""
+http://jw.hitsz.edu.cn/byyfile{obj["FILEURL"]}
+{obj["KCWZSM"] or ""}"""
 
-        return cls(name, dates, time_ranges, location, LESSON,
-                   teacher=teacher, description=description)
+        return cls(
+            name,
+            dates,
+            time_ranges,
+            location,
+            LESSON,
+            teacher=teacher,
+            description=description,
+        )
 
     @classmethod
     def parse_lab(cls, obj: dict) -> Self | None:
-        pattern = r'''【实验】(?P<课程名称>[^\[\]]+)(\[(?P<实验名称>[^\[\]]+)\])?
+        pattern = r"""【实验】(?P<课程名称>[^\[\]]+)(\[(?P<实验名称>[^\[\]]+)\])?
 \[(?P<节次>[^\[\]]+)节\]\[(?P<周次>[^\[\]]+)周\]
-\[(?P<地点>[^\[\]]*)\]'''
+\[(?P<地点>[^\[\]]*)\]"""
 
-        result = re.match(pattern, obj['SKSJ'])
+        result = re.match(pattern, obj["SKSJ"])
 
         if result is None:
             return None
 
-        name = result.group('课程名称')
-        lab_name = result.group('实验名称')
-        location = result.group('地点')
+        name = result.group("课程名称")
+        lab_name = result.group("实验名称")
+        location = result.group("地点")
         time_slot_ranges = cls.determine_time_slot_ranges(
-            result.group('节次'),
-            obj['KEY'][6]       # '5' as in 'xq1_jc5'
+            result.group("节次"),
+            obj["KEY"][6],  # '5' as in 'xq1_jc5'
         )
-        time_ranges = [(time_slot_mapping[t[0]][0], time_slot_mapping[t[1]][1])
-                       for t in time_slot_ranges]
+        time_ranges = [
+            (time_slot_mapping[t[0]][0], time_slot_mapping[t[1]][1])
+            for t in time_slot_ranges
+        ]
 
-        dates = ScheduledDates(_parse_scheduled_weeks(
-            result.group('周次')), cls.parse_day_of_week(obj))
+        dates = ScheduledDates(
+            _parse_scheduled_weeks(result.group("周次")), cls.parse_day_of_week(obj)
+        )
 
         return cls(name, dates, time_ranges, location, LAB, lab_name=lab_name)
 
     @classmethod
     def parse_exam(cls, obj: dict) -> Self | None:
-        pattern = r'''【[^【】]*考试】\n?(?P<名称>.+)
+        pattern = r"""【[^【】]*考试】\n?(?P<名称>.+)
 (?P<日期>.+)
 (?P<时间>.+)
-(?P<地点>.+)'''
+(?P<地点>.+)"""
 
-        result = re.match(pattern, obj['SKSJ'])
+        result = re.match(pattern, obj["SKSJ"])
 
         if result is None:
             return None
 
-        name = result.group('名称')
-        location = result.group('地点')
-        time_ranges_str = result.group('时间').split('-')
-        time_ranges = [_to_time_span(*map(int, [*time_ranges_str[0].split(':'),
-                                                *time_ranges_str[-1].split(':')]))]
+        name = result.group("名称")
+        location = result.group("地点")
+        time_ranges_str = result.group("时间").split("-")
+        time_ranges = [
+            _to_time_span(
+                *map(
+                    int, [*time_ranges_str[0].split(":"), *time_ranges_str[-1].split(":")]
+                )
+            )
+        ]
 
-        return cls(name, _parse_date(result.group('日期')), time_ranges, location, EXAM)
+        return cls(name, _parse_date(result.group("日期")), time_ranges, location, EXAM)
+
+    @classmethod
+    def from_XsksByxhList_item(cls, obj):
+        name = f"{obj['KCMC']} {obj['KSSJDMC']}考试"
+        location = obj["CDDM"]
+        time_ranges_str = obj["KSJTSJ"].split("-")
+        time_ranges = [
+            _to_time_span(
+                *map(
+                    int, [*time_ranges_str[0].split(":"), *time_ranges_str[-1].split(":")]
+                )
+            )
+        ]
+
+        return cls(
+            name,
+            datetime.datetime.fromisoformat(obj["KSRQ"]).astimezone(
+                zoneinfo.ZoneInfo("Asia/Shanghai")
+            ),
+            time_ranges,
+            location,
+            EXAM,
+        )
 
     def get_ics_alarms(self) -> list[ics.DisplayAlarm]:
         if self.kind == LAB:
@@ -225,24 +268,27 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
                 ics.DisplayAlarm(datetime.timedelta(minutes=-30)),
                 ics.DisplayAlarm(datetime.timedelta(minutes=-15)),
             ]
-        return [ics.DisplayAlarm(datetime.timedelta(minutes=dt))
-                for dt in ([-15, -30] if self.kind == LESSON else [-30, -60])]
+        return [
+            ics.DisplayAlarm(datetime.timedelta(minutes=dt))
+            for dt in ([-15, -30] if self.kind == LESSON else [-30, -60, -120])
+        ]
 
     def get_ics_name(self):
         match self.kind:
             case ScheduleEntryKind.LAB:
-                return preprocess.transform_lab_name(self.name, self.lab_name) + \
-                    (f'［{self.teacher}］' if self.teacher else '')
+                return preprocess.transform_lab_name(self.name, self.lab_name) + (
+                    f"［{self.teacher}］" if self.teacher else ""
+                )
             case ScheduleEntryKind.LESSON:
                 name = preprocess.transform_lesson_name(self.name)
-                return f'{name}［{self.teacher}］'
+                return f"{name}［{self.teacher}］"
             case ScheduleEntryKind.EXAM:
-                return f'【考试】{self.name}'
+                return f"【考试】{self.name}"
 
     def get_ics_description(self):
         # 如实验日程具有实验名称，则会作为日程标题，故将课程名称放在描述中
-        return f'''{self.name + '\n' if self.kind == LAB and self.lab_name else ''}
-        {self.description}'''
+        return f"""{self.name + "\n" if self.kind == LAB and self.lab_name else ""}
+        {self.description}"""
 
     def to_ics_event(self, semester_start_date) -> Iterable[ics.Event]:
         for t0, t1 in self.time_ranges:
@@ -258,7 +304,8 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
                 d1 = datetime.datetime.combine(date, t1)
                 event = ics.Event(
                     name=self.get_ics_name(),
-                    begin=d0, end=d1,
+                    begin=d0,
+                    end=d1,
                     description=self.get_ics_description(),
                     location=preprocess.location_detail(self.location),
                     categories=[get_calendar_name(self.kind)],
@@ -268,7 +315,10 @@ http://jw.hitsz.edu.cn/byyfile{obj['FILEURL']}
 
     def overlaps_with(self, time_span: tuple[datetime.time, datetime.time]):
         s2, e2 = time_span
-        for s1, e1, in self.time_ranges:
+        for (
+            s1,
+            e1,
+        ) in self.time_ranges:
             if max(s1, s2) < min(e1, e2):
                 return True
         return False
@@ -280,19 +330,26 @@ class Schedule:
     start_date: datetime.date
 
     @classmethod
-    def from_json(cls, obj: list[dict[str, dict]], error_entries: set[str] | None = None,
-                start_date: datetime.date | None = None):
+    def from_json(
+        cls,
+        obj: list[dict[str, dict]],
+        error_entries: set[str] | None = None,
+        start_date: datetime.date | None = None,
+    ):
         entries: list[ScheduleEntry] = []
         for item in obj:
-            if item['KEY'] == 'bz':
+            if item["KEY"] == "bz":
                 # 忽略备注条目
                 continue
             entry = None
             try:
-                entry = ScheduleEntry.parse_exam(item) or ScheduleEntry.parse_lab(item) \
+                entry = (
+                    ScheduleEntry.parse_exam(item)
+                    or ScheduleEntry.parse_lab(item)
                     or ScheduleEntry.parse_lesson(item)
+                )
             except Exception as e:
-                print(f'[!] Error while parsing entry: {e}')
+                print(f"[!] Error while parsing entry: {e}")
                 print(traceback.format_exc())
             if entry is None:
                 if error_entries is not None:
@@ -308,11 +365,11 @@ class Schedule:
         return cal
 
     def query_lesson_at(
-            self,
-            q_week_id: int,
-            q_date: datetime.date,
-            q_day_of_week: int,
-            q_time_span: tuple[int, int]
+        self,
+        q_week_id: int,
+        q_date: datetime.date,
+        q_day_of_week: int,
+        q_time_span: tuple[int, int],
     ):
         for entry in self.entries:
             match entry.dates:
@@ -322,8 +379,32 @@ class Schedule:
                 case ScheduledDates():
                     if not entry.dates.contains(q_week_id, q_day_of_week):
                         continue
-            if entry.overlaps_with((
+            if entry.overlaps_with(
+                (
                     time_slot_mapping[q_time_span[0]][0],
-                    time_slot_mapping[q_time_span[1]][1]
-            )):
+                    time_slot_mapping[q_time_span[1]][1],
+                )
+            ):
                 yield entry
+
+    @classmethod
+    def from_exam_json(
+        cls,
+        obj: list[dict],
+        error_entries: set[str] | None = None,
+        start_date: datetime.date | None = None,
+    ):
+        entries: list[ScheduleEntry] = []
+        for item in obj:
+            entry = None
+            try:
+                entry = ScheduleEntry.from_XsksByxhList_item(item)
+            except Exception as e:
+                print(f"[!] Error while parsing entry: {e}")
+                print(traceback.format_exc())
+            if entry is None:
+                if error_entries is not None:
+                    error_entries.add(json.dumps(item, ensure_ascii=False))
+                continue
+            entries.append(entry)
+        return cls(entries, start_date or cache.semester_start_date())

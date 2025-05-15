@@ -33,3 +33,9 @@ jwc = "jwc.cli:cli"
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
+
+[tool.ruff]
+line-length = 90
+
+[tool.ruff.lint]
+ignore = ["F541"]

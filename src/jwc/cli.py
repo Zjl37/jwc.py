@@ -45,6 +45,33 @@ def to_ics(out_file):
 
 
 @cli.command("")
+@click.option("-o", "out_file", default=None, help="输出文件名")
+def exam_to_ics(out_file) -> None:
+    """【教务考试导出】由考试安排生成 ics 日历文件"""
+    json = cache.XsksByxhList()
+    start_date = cache.semester_start_date()
+    error_entries: set[str] = set()
+    schedule = Schedule.from_exam_json(json, error_entries, start_date=start_date)
+    if error_entries:
+        click.secho(
+            f"[!] 遇到无法解析的考试条目。以下课程将不会添加到生成的日历中。", fg="red"
+        )
+        for e in error_entries:
+            click.secho(e, fg="red")
+
+    calendar = schedule.to_ics()
+    from .schedule import EXAM
+
+    ics_filename = (
+        out_file or f"{cache.jwc_cache_dir()}/out/{get_calendar_name(EXAM)}.ics"
+    )
+    os.makedirs(os.path.dirname(ics_filename), exist_ok=True)
+    with open(ics_filename, "w") as f:
+        f.write(calendar.serialize())
+        print(f"[i] 日历已写入 {ics_filename} 文件。")
+
+
+@cli.command("")
 @click.argument("in_file")
 @click.option("-o", "out_file", default=None, help="输出文件名")
 def phxp_arrange(in_file, out_file):
