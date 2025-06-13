@@ -18,8 +18,9 @@ dependencies = [
     "textual-image>=0.7.0",
     "cryptography>=44.0.2",
     "fake-useragent>=2.1.0",
+    "idshit @ file:///${PROJECT_ROOT}/../idshit",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 license = {text = "GPLv3"}
 

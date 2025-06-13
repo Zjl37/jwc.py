@@ -42,7 +42,7 @@ def cli_auth_idshit_pwd(session: requests.Session):
     # 本部统一身份认证平台（密码登录）
     click.echo("=== 正在代为你登录*本部*统一身份认证平台 ===")
 
-    from jwc.idshit_pwd_login import auth_login, check_need_captcha
+    from idshit.pwd_login import auth_login, check_need_captcha
 
     username: str = click.prompt("请输入用户名（学号）", prompt_suffix="：")
 
@@ -59,12 +59,21 @@ def cli_auth_idshit_pwd(session: requests.Session):
 
     password: str = click.prompt("请输入密码", prompt_suffix="：", hide_input=True)
 
-    success, msg = auth_login(session, username.strip(), password)
-    if not success:
-        click.echo("[!] " + msg)
+    err, res = auth_login(session, username.strip(), password, service="http://jw.hitsz.edu.cn/casLogin")
+    if not res.ok:
+        print(f"[!] 登录请求失败！（{res.status_code}）")
+    if err:
+        if err is not True:
+            click.echo("[!] 错误提示：" + err)
         session = None
-        raise Exception(msg)
-    click.echo("[i] " + msg)
+        raise Exception(err)
+
+    if "/authentication/main" not in res.url:
+        print(f"[!] 登录失败。跳转异常：#{res.url}#")
+        raise Exception("登录失败。跳转异常")
+
+    click.echo("[i] 登录成功")
+    return
 
 
 def cli_auth_szsso(session: requests.Session):
@@ -108,19 +117,13 @@ def cli_auth_qr(session: requests.Session):
     # 本部统一身份认证平台（哈工大APP扫码）
     click.echo("=== 正在代为你登录*本部*统一身份认证平台 ===")
 
-    from jwc.qr_login import (
-        get_qrcode,
-        get_qrcode_image,
-        HITIDS_HOST,
-        get_status,
-        login,
-    )
+    from idshit.qr_login import get_qr_token, get_qr_image, HITIDS_HOST, get_status, login
 
-    qr_token = get_qrcode(session)
-    click.echo("[i] 请用哈工大APP扫描以下二维码：")
+    qr_token = get_qr_token(session)
+    click.echo("[i] 请用哈工大 APP 扫描以下二维码：")
     click.echo(HITIDS_HOST + "/authserver/qrCode/getCode?uuid=" + qr_token)
 
-    qr_img = get_qrcode_image(session, qr_token)
+    qr_img = get_qr_image(session, qr_token)
     from PIL import Image
     import io
 
@@ -148,12 +151,20 @@ def cli_auth_qr(session: requests.Session):
                 )
             raise Exception("二维码已失效")
 
-    success, msg = login(session, qr_token)
-    if not success:
-        click.echo("[!] " + msg)
-        session = None
-        raise Exception(msg)
-    click.echo("[i] " + msg)
+    err, res = login(session, qr_token, service="http://jw.hitsz.edu.cn/casLogin")
+    if not res.ok:
+        print(f"[!] 登录请求失败！（{res.status_code}）")
+    if err:
+        if err is not True:
+            click.echo("[!] 错误提示：" + err)
+            session = None
+        raise Exception(err)
+
+    if "/authentication/main" not in res.url:
+        print(f"[!] 登录失败。跳转异常：#{res.url}#")
+        raise Exception("登录失败。跳转异常")
+
+    click.echo("[i] 登录成功")
 
 
 def init_session(force: bool = False) -> requests.Session:
