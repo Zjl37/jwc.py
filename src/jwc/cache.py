@@ -59,7 +59,9 @@ def cli_auth_idshit_pwd(session: requests.Session):
 
     password: str = click.prompt("请输入密码", prompt_suffix="：", hide_input=True)
 
-    err, res = auth_login(session, username.strip(), password, service="http://jw.hitsz.edu.cn/casLogin")
+    err, res = auth_login(
+        session, username.strip(), password, service="http://jw.hitsz.edu.cn/casLogin"
+    )
     if not res.ok:
         print(f"[!] 登录请求失败！（{res.status_code}）")
     if err:
@@ -276,10 +278,13 @@ def request_semester_start_date():
 def semester_start_date() -> datetime.date:
     """动态获取学期开始日期"""
     cache_file = f"{jwc_cache_dir()}/semester_start_date.txt"
+    kb_file = f"{jwc_cache_dir()}/response-queryxszykbzong.json"
 
     # 如果缓存存在且有效
-    if os.path.exists(cache_file) and os.path.getmtime(cache_file) >= os.path.getmtime(
-        f"{jwc_cache_dir()}/response-queryxszykbzong.json"
+    if (
+        os.path.exists(cache_file)
+        and os.path.exists(kb_file)
+        and os.path.getmtime(cache_file) >= os.path.getmtime(kb_file)
     ):
         try:
             with open(cache_file) as f:

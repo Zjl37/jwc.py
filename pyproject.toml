@@ -7,20 +7,20 @@ authors = [
 ]
 dependencies = [
     "ics>=0.7.2",
-    "click>=8.1.7",
+    "click>=8.1.8",
     "requests>=2.32.3",
-    "pandas>=2.2.2",
+    "pandas>=2.2.3",
     "odfpy>=1.4.1",
     "openpyxl>=3.1.5",
     "xlrd>=2.0.1",
-    "beautifulsoup4>=4.12.3",
+    "beautifulsoup4>=4.13.4",
     "html5lib>=1.1",
-    "textual-image>=0.7.0",
-    "cryptography>=44.0.2",
-    "fake-useragent>=2.1.0",
-    "idshit @ file:///${PROJECT_ROOT}/../idshit",
+    "textual-image>=0.8.2",
+    "cryptography>=44.0.3",
+    "fake-useragent>=2.2.0",
+    "idshit @ git+https://github.com/Zjl37/idshit.py.git",
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 readme = "README.md"
 license = {text = "GPLv3"}
 

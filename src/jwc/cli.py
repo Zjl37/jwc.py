@@ -11,7 +11,7 @@ def cli():
     pass
 
 
-@cli.command("fetch")
+@cli.command()
 # @click.option('-i', '--id', prompt='学号')
 def fetch(**kwargs):
     """更新中间文件的缓存"""
@@ -20,7 +20,7 @@ def fetch(**kwargs):
     click.echo("[i] 缓存已更新")
 
 
-@cli.command("")
+@cli.command()
 @click.option("-o", "out_file", default=None, help="输出文件名")
 def to_ics(out_file):
     """【教务课表导出】由课程表生成 ics 日历文件"""
@@ -44,7 +44,7 @@ def to_ics(out_file):
         print(f"[i] 日历已写入 {ics_filename} 文件。")
 
 
-@cli.command("")
+@cli.command()
 @click.option("-o", "out_file", default=None, help="输出文件名")
 def exam_to_ics(out_file) -> None:
     """【教务考试导出】由考试安排生成 ics 日历文件"""
@@ -71,7 +71,7 @@ def exam_to_ics(out_file) -> None:
         print(f"[i] 日历已写入 {ics_filename} 文件。")
 
 
-@cli.command("")
+@cli.command()
 @click.argument("in_file")
 @click.option("-o", "out_file", default=None, help="输出文件名")
 def phxp_arrange(in_file, out_file):
@@ -88,7 +88,7 @@ def phxp_arrange(in_file, out_file):
     phxp.arrange(in_file, out_file, schedule)
 
 
-@cli.command("")
+@cli.command()
 @click.option("-o", "out_file", default=None, help="输出文件名")
 def phxp_to_ics(out_file):
     """【大物实验课表导出】从物理实验选课平台生成 ics 日历"""
