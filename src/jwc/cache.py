@@ -60,36 +60,34 @@ def request_current_semester() -> CurrentSemester:
     raise ConnectionError(f"获取当前学期失败: {response.status_code}")
 
 
-def current_semester() -> CurrentSemester:
+def current_semester() -> tuple[str, str]:
     cache_file = f"{jwc_cache_dir()}/current_semester.json"
     try:
         if not os.path.exists(cache_file):
-            return _refresh_semester_cache()
+            return refresh_semester_cache()
 
-        with open(cache_file) as f:
-            data = json.load(f)
-            # Force refresh if cache is older than 30 days
-            if (
-                datetime.datetime.now().timestamp() - os.path.getmtime(cache_file)
-            ) > 30 * 86400:
-                click.secho("[i] 学期信息缓存超过30天，自动刷新...", fg="yellow")
-                return _refresh_semester_cache()
-            return CurrentSemester.model_validate(data)
+        # Force refresh if cache is old
+        if (
+            datetime.datetime.now().timestamp() - os.path.getmtime(cache_file)
+        ) > 30 * 86400:
+            click.secho("[i] 学期信息缓存超过30天，自动刷新...", fg="yellow")
+            return refresh_semester_cache()
+        semester = CurrentSemester.model_validate(json.load(open(cache_file)))
+        return semester.XN, semester.XQ
     except:
-        return _refresh_semester_cache()
+        return refresh_semester_cache()
 
 
-def _refresh_semester_cache():
+def refresh_semester_cache():
     cache_file = f"{jwc_cache_dir()}/current_semester.json"
     semester = request_current_semester()
     with open(cache_file, "w") as f:
         json.dump(semester.model_dump(), f)
-    return semester
+    return semester.XN, semester.XQ
 
 
-def semester_cache_dir() -> str:
-    sem = current_semester()
-    dir_path = f"{jwc_cache_dir()}/{sem.XN}-{sem.XQ}"
+def semester_cache_dir(xn: str, xq: str) -> str:
+    dir_path = f"{jwc_cache_dir()}/{xn}-{xq}"
     os.makedirs(dir_path, exist_ok=True)
     return dir_path
 
@@ -193,7 +191,8 @@ def cli_auth_qr(session: requests.Session):
     # 本部统一身份认证平台（哈工大APP扫码）
     click.echo("=== 正在代为你登录*本部*统一身份认证平台 ===")
 
-    from idshit.qr_login import get_qr_token, get_qr_image, HITIDS_HOST, get_status, login
+    from idshit.qr_login import get_qr_token, get_qr_image, get_status, login
+    from idshit.common import HITIDS_HOST
 
     qr_token = get_qr_token(session)
     click.echo("[i] 请用哈工大 APP 扫描以下二维码：")
@@ -255,13 +254,12 @@ def init_session(force: bool = False) -> requests.Session:
         {"User-Agent": fake_useragent.UserAgent(platforms="desktop").random}
     )
 
-    auth_choice: str = click.prompt(
+    auth_choice: str = input(
         """认证方式？
         [1] 本部统一身份认证平台（哈工大APP扫码）〔推荐〕
         [2] 本部统一身份认证平台（密码登录）
         [3] Cookie
-        """,
-        prompt_suffix="> ",
+        > """
     )
 
     if auth_choice.strip().startswith("3"):
@@ -274,11 +272,9 @@ def init_session(force: bool = False) -> requests.Session:
     return (globalSession := session)
 
 
-def request_xszykbzong():
+def request_xszykbzong(xn: str, xq: str):
     session = init_session()
-
-    sem = current_semester()
-    request_data = {"xn": sem.XN, "xq": sem.XQ}
+    request_data = {"xn": xn, "xq": xq}
 
     response = session.post(
         url="http://jw.hitsz.edu.cn/xszykb/queryxszykbzong",
@@ -288,7 +284,7 @@ def request_xszykbzong():
 
     if response.ok:
         print(f"[i] 已更新 xszykbzong")
-        cache_dir = semester_cache_dir()
+        cache_dir = semester_cache_dir(xn, xq)
         path = f"{cache_dir}/response-queryxszykbzong.json"
         with open(path, "w") as file:
             _ = file.write(response.text)
@@ -296,12 +292,12 @@ def request_xszykbzong():
         print(f"[!] 在请求 queryxszykbzong 时出错了：{response.status_code}")
 
 
-def xszykbzong(path: str = "", text: str = "") -> list[KbEntry]:
+def xszykbzong(xn: str, xq: str, path: str = "", text: str = "") -> list[KbEntry]:
     """返回缓存的 queryxszykbzong 数据，如未找到则向服务器请求"""
     if text != "":
         raw_data = json.loads(text)
     else:
-        default_path = f"{semester_cache_dir()}/response-queryxszykbzong.json"
+        default_path = f"{semester_cache_dir(xn, xq)}/response-queryxszykbzong.json"
         path = path or default_path
 
         def should_fetch():
@@ -322,7 +318,7 @@ def xszykbzong(path: str = "", text: str = "") -> list[KbEntry]:
                 return not cast(str, ans).lower().startswith("n")
 
         if should_fetch():
-            request_xszykbzong()
+            request_xszykbzong(xn, xq)
 
         with open(path) as f:
             raw_data = json.load(f)
@@ -330,14 +326,11 @@ def xszykbzong(path: str = "", text: str = "") -> list[KbEntry]:
     return [KbEntry.model_validate(item) for item in raw_data]
 
 
-def request_semester_start_date():
+def request_semester_start_date(xn: str, xq: str):
     session = init_session()
-
-    # 调用获取校历的接口
-    sem = current_semester()
     response = session.post(
         url="http://jw.hitsz.edu.cn/component/queryRlZcSj",
-        data={"xn": sem.XN, "xq": sem.XQ, "djz": "1"},
+        data={"xn": xn, "xq": xq, "djz": "1"},
         verify=False,
     )
 
@@ -347,17 +340,18 @@ def request_semester_start_date():
         for entry in data.get("content", []):
             if entry.get("xqj") == "1":
                 start_date = datetime.datetime.strptime(entry["rq"], "%Y-%m-%d").date()
-                with open(f"{jwc_cache_dir()}/semester_start_date.txt", "w") as f:
-                    f.write(start_date.isoformat())
+                cache_file = f"{semester_cache_dir(xn, xq)}/semester_start_date.txt"
+                with open(cache_file, "w") as f:
+                    _ = f.write(start_date.isoformat())
                 return start_date
         raise ValueError("未找到第一周星期一的日期")
     else:
         raise ConnectionError(f"获取学期开始日期失败: {response.status_code}")
 
 
-def semester_start_date() -> datetime.date:
+def semester_start_date(xn: str, xq: str) -> datetime.date:
     """动态获取学期开始日期"""
-    cache_file = f"{semester_cache_dir()}/semester_start_date.txt"
+    cache_file = f"{semester_cache_dir(xn, xq)}/semester_start_date.txt"
     kb_file = f"{jwc_cache_dir()}/response-queryxszykbzong.json"
 
     # 如果缓存存在且有效
@@ -374,7 +368,7 @@ def semester_start_date() -> datetime.date:
 
     # 否则请求接口并缓存
     try:
-        d0 = request_semester_start_date()
+        d0 = request_semester_start_date(xn, xq)
         click.secho(f"[i] 获取到学期开始日期: {d0.strftime('%Y-%m-%d')}", fg="green")
         return d0
     except Exception as e:

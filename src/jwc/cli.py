@@ -1,8 +1,40 @@
 import os
+import re
 import click
 import datetime
+
+from click.decorators import FC
 from . import cache
-from .schedule import Schedule, get_calendar_name
+from .schedule import Schedule, get_calendar_name, get_semester_desc_brief
+
+
+def parse_semester_arg(s: str) -> tuple[str, str]:
+    """解析命令行中的学期选项，返回 (学年, 学期) 元组"""
+    match = re.match(r"^(\d+)(sp|su|au|fa|[afs春夏秋])?", s.lower())
+    if not match:
+        raise ValueError(f"无效的学期格式: {s}")
+
+    year_part, season_part = match.groups()
+    base_year_raw = int(year_part)
+    if base_year_raw < 100:
+        base_year = 2000 + int(year_part)
+    else:
+        base_year = base_year_raw
+
+    # Determine season
+    if season_part in {"春", "sp", "s"}:
+        xq = "2"
+        xn = f"{base_year - 1}-{base_year}"
+    elif season_part in {"夏", "su"}:
+        xq = "3"
+        xn = f"{base_year - 1}-{base_year}"
+    elif season_part in {"秋", "f", "au", "fa"} or season_part is None:  # Default to fall
+        xq = "1"
+        xn = f"{base_year}-{base_year + 1}"
+    else:
+        raise ValueError(f"未知的季节标识: {season_part}")
+
+    return (xn, xq)
 
 
 @click.group()
@@ -11,24 +43,34 @@ def cli():
     pass
 
 
+def add_semester_option(func: FC) -> FC:
+    return click.option("-s", "semester", help="指定学期，格式如 24秋/25s/2025夏")(func)
+
+
 @cli.command()
 # @click.option('-i', '--id', prompt='学号')
-def fetch(**kwargs):
+@add_semester_option
+def fetch(semester: str | None):
     """更新中间文件的缓存"""
-    cache.request_xszykbzong()
-    _ = cache.request_semester_start_date()
+    xn, xq = parse_semester_arg(semester) if semester else cache.refresh_semester_cache()
+    cache.request_xszykbzong(xn, xq)
+    _ = cache.request_semester_start_date(xn, xq)
     click.echo("[i] 缓存已更新")
 
 
 @cli.command()
+@add_semester_option
 @click.option("-o", "out_file", default=None, help="输出文件名")
-def to_ics(out_file: str):
+def to_ics(semester: str | None, out_file: str):
     """【教务课表导出】由课程表生成 ics 日历文件"""
-    data = cache.xszykbzong()
+    xn, xq = parse_semester_arg(semester) if semester else cache.current_semester()
+    data = cache.xszykbzong(xn, xq)
     error_entries: set[str] = set()
-    # 获取动态学期开始日期
-    start_date = cache.semester_start_date()
-    schedule = Schedule.from_json(data, error_entries, start_date=start_date)
+    # 动态获取学期开始日期
+    start_date = cache.semester_start_date(xn, xq)
+    schedule = Schedule.from_kb(
+        data, get_semester_desc_brief(xn, xq), start_date, error_entries
+    )
     if error_entries:
         click.secho(
             f"[!] 遇到无法解析的课表条目。以下课程将不会添加到生成的日历中。", fg="red"
@@ -37,9 +79,8 @@ def to_ics(out_file: str):
             click.secho(e, fg="red")
 
     calendar = schedule.to_ics()
-    ics_filename = (
-        out_file or f"{cache.semester_cache_dir()}/out/{get_calendar_name()}.ics"
-    )
+    calendar_name = get_calendar_name(get_semester_desc_brief(xn, xq))
+    ics_filename = out_file or f"{cache.jwc_cache_dir()}/out/{calendar_name}.ics"
     os.makedirs(os.path.dirname(ics_filename), exist_ok=True)
     with open(ics_filename, "w") as f:
         _ = f.write(calendar.serialize())
@@ -47,13 +88,16 @@ def to_ics(out_file: str):
 
 
 @cli.command()
+@add_semester_option
 @click.option("-o", "out_file", default=None, help="输出文件名")
-def exam_to_ics(out_file: str) -> None:
+def exam_to_ics(semester: str | None, out_file: str) -> None:
     """【教务考试导出】由考试安排生成 ics 日历文件"""
-    json = cache.XsksByxhList()
-    start_date = cache.semester_start_date()
+    xn, xq = parse_semester_arg(semester) if semester else cache.current_semester()
+    data = cache.XsksByxhList()
+    start_date = cache.semester_start_date(xn, xq)
+    semester_desc = get_semester_desc_brief(xn, xq)
     error_entries: set[str] = set()
-    schedule = Schedule.from_exam_json(json, error_entries, start_date=start_date)
+    schedule = Schedule.from_xsks(data, semester_desc, start_date, error_entries)
     if error_entries:
         click.secho(
             f"[!] 遇到无法解析的考试条目。以下课程将不会添加到生成的日历中。", fg="red"
@@ -64,9 +108,8 @@ def exam_to_ics(out_file: str) -> None:
     calendar = schedule.to_ics()
     from .schedule import EXAM
 
-    ics_filename = (
-        out_file or f"{cache.jwc_cache_dir()}/out/{get_calendar_name(EXAM)}.ics"
-    )
+    calendar_name = get_calendar_name(get_semester_desc_brief(xn, xq), EXAM)
+    ics_filename = out_file or f"{cache.jwc_cache_dir()}/out/{calendar_name}.ics"
     os.makedirs(os.path.dirname(ics_filename), exist_ok=True)
     with open(ics_filename, "w") as f:
         _ = f.write(calendar.serialize())
@@ -75,15 +118,19 @@ def exam_to_ics(out_file: str) -> None:
 
 @cli.command()
 @click.argument("in_file")
+@add_semester_option
 @click.option("-o", "out_file", default=None, help="输出文件名")
-def phxp_arrange(in_file: str, out_file: str):
+def phxp_arrange(in_file: str, out_file: str, semester: str | None):
     """
     【大物实验排课辅助】向给定的大物实验排课表旁边添加“冲突课程”一列
 
     IN_FILE 应为教师发布的大物实验排课表 Excel 文件。
     """
-    json = cache.xszykbzong()
-    schedule = Schedule.from_json(json)
+    xn, xq = parse_semester_arg(semester) if semester else cache.current_semester()
+    data = cache.xszykbzong(xn, xq)
+    start_date = cache.semester_start_date(xn, xq)
+    semester_desc = get_semester_desc_brief(xn, xq)
+    schedule = Schedule.from_kb(data, semester_desc, start_date)
 
     from . import phxp
 
@@ -106,7 +153,7 @@ def phxp_to_ics(out_file: str):
     )
     os.makedirs(os.path.dirname(ics_filename), exist_ok=True)
     with open(ics_filename, "w") as f:
-        f.write(calendar.serialize())
+        _ = f.write(calendar.serialize())
         print(f"[i] 日历已写入 {ics_filename} 文件。")
 
 

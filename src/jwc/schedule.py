@@ -19,9 +19,21 @@ ScheduleEntryKind = Enum("ScheduleEntryKind", ["LESSON", "EXAM", "LAB"])
 LESSON, EXAM, LAB = ScheduleEntryKind
 
 
-def get_calendar_name(kind: ScheduleEntryKind = LESSON):
-    # TODO: determine semester dynamically
-    return f"25春{'考试' if kind == EXAM else '课程'} - {datetime.date.today().strftime('%m月%d日')}更新"
+def get_semester_desc_brief(xn: str, xq: str):
+    year = xn.split("-")[0 if xq == "1" else 1]
+    season = {"1": "秋", "2": "春", "3": "夏"}[xq]
+    return f"{year[-2:]}{season}"
+
+
+def get_semester_description(xn: str, xq: str):
+    year = xn.split("-")[0 if xq == "1" else 1]
+    season = {"1": "秋", "2": "春", "3": "夏"}[xq]
+    return f"{year}年{season}季学期"
+
+
+def get_calendar_name(semester_desc: str, kind: ScheduleEntryKind = LESSON):
+    base_name = f"{semester_desc}{'考试' if kind == EXAM else '课程'}"
+    return f"{base_name} - {datetime.date.today().strftime('%m月%d日')}更新"
 
 
 def _to_range(text: str) -> tuple[int, int]:
@@ -80,9 +92,8 @@ class ScheduledDates:
         return q_day_of_week == self.day_of_week and q_week_id in self.weeks
 
 
-def _parse_date(text: str) -> datetime.date:
+def _parse_date(text: str, d0: datetime.date) -> datetime.date:
     """根据当前学年，解析缺少年份的日期"""
-    d0 = cache.semester_start_date()
     result = re.match(r"(\d+)月(\d+)日", text)
     if result is None:
         raise ValueError(f'_parse_date: 无法解析 "{text}"')
@@ -216,7 +227,7 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
         return cls(name, dates, time_ranges, location, LAB, lab_name=lab_name)
 
     @classmethod
-    def parse_exam(cls, obj: KbEntry) -> Self | None:
+    def parse_exam(cls, obj: KbEntry, d0: datetime.date) -> Self | None:
         pattern = r"""【[^【】]*考试】\n?(?P<名称>.+)
 (?P<日期>.+)
 (?P<时间>.+)
@@ -238,7 +249,9 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
             )
         ]
 
-        return cls(name, _parse_date(result.group("日期")), time_ranges, location, EXAM)
+        return cls(
+            name, _parse_date(result.group("日期"), d0), time_ranges, location, EXAM
+        )
 
     @classmethod
     def from_XsksByxhList_item(cls, obj: XsksEntry):
@@ -292,7 +305,7 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
         return f"""{self.name + "\n" if self.kind == LAB and self.lab_name else ""}
         {self.description}"""
 
-    def to_ics_event(self, semester_start_date) -> Iterable[ics.Event]:
+    def to_ics_event(self, semester_start_date, categories) -> Iterable[ics.Event]:
         for t0, t1 in self.time_ranges:
             # ics-py 尚未支持重复日程，故作展开
             # https://github.com/ics-py/ics-py/issues/14
@@ -310,7 +323,7 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
                     end=d1,
                     description=self.get_ics_description(),
                     location=preprocess.location_detail(self.location),
-                    categories=[get_calendar_name(self.kind)],
+                    categories=categories,
                     alarms=self.get_ics_alarms(),
                 )
                 yield event
@@ -329,14 +342,16 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
 @dataclass
 class Schedule:
     entries: list[ScheduleEntry]
+    semester_desc: str
     start_date: datetime.date
 
     @classmethod
-    def from_json(
+    def from_kb(
         cls,
         obj: list[KbEntry],
+        semester_desc: str,
+        start_date: datetime.date,
         error_entries: set[str] | None = None,
-        start_date: datetime.date | None = None,
     ):
         entries: list[ScheduleEntry] = []
         for item in obj:
@@ -346,7 +361,7 @@ class Schedule:
             entry = None
             try:
                 entry = (
-                    ScheduleEntry.parse_exam(item)
+                    ScheduleEntry.parse_exam(item, start_date)
                     or ScheduleEntry.parse_lab(item)
                     or ScheduleEntry.parse_lesson(item)
                 )
@@ -358,12 +373,17 @@ class Schedule:
                     error_entries.add(json.dumps(item, ensure_ascii=False))
                 continue
             entries.append(entry)
-        return cls(entries, start_date or cache.semester_start_date())
+        return cls(entries, semester_desc, start_date)
 
     def to_ics(self) -> ics.Calendar:
         cal = ics.Calendar()
         for entry in self.entries:
-            cal.events.update(entry.to_ics_event(self.start_date))
+            cal.events.update(
+                entry.to_ics_event(
+                    self.start_date,
+                    categories=[get_calendar_name(self.semester_desc, entry.kind)],
+                )
+            )
         return cal
 
     def query_lesson_at(
@@ -390,11 +410,12 @@ class Schedule:
                 yield entry
 
     @classmethod
-    def from_exam_json(
+    def from_xsks(
         cls,
         obj: list[XsksEntry],
+        semester_desc: str,
+        start_date: datetime.date,
         error_entries: set[str] | None = None,
-        start_date: datetime.date | None = None,
     ):
         entries: list[ScheduleEntry] = []
         for item in obj:
@@ -409,4 +430,4 @@ class Schedule:
                     error_entries.add(json.dumps(item, ensure_ascii=False))
                 continue
             entries.append(entry)
-        return cls(entries, start_date or cache.semester_start_date())
+        return cls(entries, semester_desc, start_date)
