@@ -3,6 +3,36 @@ import json
 import datetime
 import time
 from typing import TypeAlias, cast
+from pydantic import BaseModel
+
+
+class CurrentSemester(BaseModel):
+    XNXQ_EN: str
+    XN: str
+    XNXQ: str
+    XQ: str
+
+
+class KbEntry(BaseModel):
+    KCWZSM: None | str
+    RWH: None | str
+    SKFS: None | str
+    SFFXEXW: None | str
+    FILEURL: str | None = None
+    SKSJ: str
+    XB: int
+    SKSJ_EN: None | str = None
+    KEY: str
+
+
+class XsksEntry(BaseModel):
+    KCMC: str
+    KSSJDMC: str
+    CDDM: str
+    KSJTSJ: str
+    KSRQ: str
+
+
 import click
 import requests
 import os
@@ -18,6 +48,50 @@ def jwc_cache_dir():
     if not os.path.isdir(dir):
         os.makedirs(dir)
     return dir
+
+
+def request_current_semester() -> CurrentSemester:
+    session = init_session()
+    response = session.post(
+        url="http://jw.hitsz.edu.cn/component/querydangqianxnxq", verify=False
+    )
+    if response.ok:
+        return CurrentSemester.model_validate(response.json())
+    raise ConnectionError(f"获取当前学期失败: {response.status_code}")
+
+
+def current_semester() -> CurrentSemester:
+    cache_file = f"{jwc_cache_dir()}/current_semester.json"
+    try:
+        if not os.path.exists(cache_file):
+            return _refresh_semester_cache()
+
+        with open(cache_file) as f:
+            data = json.load(f)
+            # Force refresh if cache is older than 30 days
+            if (
+                datetime.datetime.now().timestamp() - os.path.getmtime(cache_file)
+            ) > 30 * 86400:
+                click.secho("[i] 学期信息缓存超过30天，自动刷新...", fg="yellow")
+                return _refresh_semester_cache()
+            return CurrentSemester.model_validate(data)
+    except:
+        return _refresh_semester_cache()
+
+
+def _refresh_semester_cache():
+    cache_file = f"{jwc_cache_dir()}/current_semester.json"
+    semester = request_current_semester()
+    with open(cache_file, "w") as f:
+        json.dump(semester.model_dump(), f)
+    return semester
+
+
+def semester_cache_dir() -> str:
+    sem = current_semester()
+    dir_path = f"{jwc_cache_dir()}/{sem.XN}-{sem.XQ}"
+    os.makedirs(dir_path, exist_ok=True)
+    return dir_path
 
 
 globalSession: requests.Session | None = None  # type: ignore
@@ -203,7 +277,8 @@ def init_session(force: bool = False) -> requests.Session:
 def request_xszykbzong():
     session = init_session()
 
-    request_data = {"xn": "2024-2025", "xq": "2"}
+    sem = current_semester()
+    request_data = {"xn": sem.XN, "xq": sem.XQ}
 
     response = session.post(
         url="http://jw.hitsz.edu.cn/xszykb/queryxszykbzong",
@@ -213,51 +288,56 @@ def request_xszykbzong():
 
     if response.ok:
         print(f"[i] 已更新 xszykbzong")
-        with open(f"{jwc_cache_dir()}/response-queryxszykbzong.json", "w") as file:
+        cache_dir = semester_cache_dir()
+        path = f"{cache_dir}/response-queryxszykbzong.json"
+        with open(path, "w") as file:
             _ = file.write(response.text)
     else:
         print(f"[!] 在请求 queryxszykbzong 时出错了：{response.status_code}")
 
 
-def xszykbzong(path: str = "", text: str = "") -> JSON_ro:
-    """返回缓存的 queryxszykbzong 的 JSON 对象，如未找到则向服务器请求"""
+def xszykbzong(path: str = "", text: str = "") -> list[KbEntry]:
+    """返回缓存的 queryxszykbzong 数据，如未找到则向服务器请求"""
     if text != "":
-        return cast(JSON_ro, json.loads(text))
+        raw_data = json.loads(text)
+    else:
+        default_path = f"{semester_cache_dir()}/response-queryxszykbzong.json"
+        path = path or default_path
 
-    if path == "":
-        path = f"{jwc_cache_dir()}/response-queryxszykbzong.json"
+        def should_fetch():
+            if not os.path.isfile(path):
+                return True
 
-    def should_fetch():
-        if not os.path.isfile(path):
-            return True
+            now = time.time()
+            DAY = 24 * 60 * 60  # seconds
+            stale_time = now - os.path.getmtime(path)
 
-        now = time.time()
-        DAY = 24 * 60 * 60  # seconds
-        stale_time = now - os.path.getmtime(path)
+            if stale_time > 7 * DAY:
+                ans = click.prompt(
+                    f"[?] 缓存中的课表已有 {int(stale_time) // DAY} 天未更新，要重新获取吗？[Y/n]",
+                    default="y",
+                    type=str,
+                    show_default=False,
+                )
+                return not cast(str, ans).lower().startswith("n")
 
-        if stale_time > 7 * DAY:
-            ans = click.prompt(  # pyright: ignore [reportAny]
-                f"[?] 缓存中的课表已有 {int(stale_time) // DAY} 天未更新，要重新获取吗？[Y/n]",
-                default="y",
-                type=str,
-                show_default=False,
-            )
-            return not cast(str, ans).lower().startswith("n")
+        if should_fetch():
+            request_xszykbzong()
 
-    if should_fetch():
-        request_xszykbzong()
+        with open(path) as f:
+            raw_data = json.load(f)
 
-    with open(path) as json_file:
-        return cast(JSON_ro, json.load(json_file))
+    return [KbEntry.model_validate(item) for item in raw_data]
 
 
 def request_semester_start_date():
     session = init_session()
 
     # 调用获取校历的接口
+    sem = current_semester()
     response = session.post(
         url="http://jw.hitsz.edu.cn/component/queryRlZcSj",
-        data={"xn": "2024-2025", "xq": "2", "djz": "1"},
+        data={"xn": sem.XN, "xq": sem.XQ, "djz": "1"},
         verify=False,
     )
 
@@ -277,7 +357,7 @@ def request_semester_start_date():
 
 def semester_start_date() -> datetime.date:
     """动态获取学期开始日期"""
-    cache_file = f"{jwc_cache_dir()}/semester_start_date.txt"
+    cache_file = f"{semester_cache_dir()}/semester_start_date.txt"
     kb_file = f"{jwc_cache_dir()}/response-queryxszykbzong.json"
 
     # 如果缓存存在且有效
@@ -343,10 +423,10 @@ def request_XsksByxhList_page(session, q, page):
     return response.json()
 
 
-def XsksByxhList(path: str = "", text: str = "") -> list[dict]:
-    """返回缓存的 queryXsksByxhList 的 JSON 对象，如未找到则向服务器请求"""
+def XsksByxhList(path: str = "", text: str = "") -> list[XsksEntry]:
+    """返回缓存的 queryXsksByxhList 数据，如未找到则向服务器请求"""
     if text != "":
-        return json.loads(text)
+        raw_data = json.loads(text)
 
     if path == "":
         path = f"{jwc_cache_dir()}/response-queryXsksByxhList.json"
@@ -371,5 +451,7 @@ def XsksByxhList(path: str = "", text: str = "") -> list[dict]:
     if should_fetch():
         request_XsksByxhList()
 
-    with open(path) as json_file:
-        return cast(JSON_ro, json.load(json_file))
+    with open(path) as f:
+        raw_data = json.load(f)
+
+    return [XsksEntry.model_validate(item) for item in raw_data]

@@ -11,6 +11,8 @@ import re
 import traceback
 from . import cache
 from . import preprocess
+from .cache import XsksEntry
+from .cache import KbEntry
 
 
 ScheduleEntryKind = Enum("ScheduleEntryKind", ["LESSON", "EXAM", "LAB"])
@@ -120,12 +122,12 @@ class ScheduleEntry:
     lab_name: str = ""
 
     @staticmethod
-    def parse_day_of_week(obj: dict) -> Literal[1, 2, 3, 4, 5, 6, 7]:
-        r = int(obj["KEY"][2])
+    def parse_day_of_week(obj: KbEntry) -> Literal[1, 2, 3, 4, 5, 6, 7]:
+        r = int(obj.KEY[2])
         if r not in [1, 2, 3, 4, 5, 6, 7]:
             print(f"[!] warning: weird day_of_week {r} on this entry:")
             print(json.dumps(obj, ensure_ascii=False))
-        return r  # type: ignore
+        return r
 
     @staticmethod
     def determine_time_slot_ranges(
@@ -141,13 +143,13 @@ class ScheduleEntry:
         return []
 
     @classmethod
-    def parse_lesson(cls, obj: dict) -> Self | None:
+    def parse_lesson(cls, obj: KbEntry) -> Self | None:
         pattern = r"""(?P<名称>[^\[\]]+)
 \[(?P<教师>[^\[\]]*)\]
 \[(?P<周次>[^\[\]]+)周\]\[(?P<地点>[^\[\]]*)\](
 第(?P<节次>.+)节)?"""
 
-        result = re.match(pattern, obj["SKSJ"])
+        result = re.match(pattern, obj.SKSJ)
 
         if result is None:
             return None
@@ -157,7 +159,7 @@ class ScheduleEntry:
         location = result.group("地点")
         time_slot_ranges = cls.determine_time_slot_ranges(
             result.group("节次"),
-            obj["KEY"][6],  # '5' as in 'xq1_jc5'
+            obj.KEY[6],  # '5' as in 'xq1_jc5'
         )
         time_ranges = [
             (time_slot_mapping[t[0]][0], time_slot_mapping[t[1]][1])
@@ -169,10 +171,10 @@ class ScheduleEntry:
             _parse_scheduled_weeks(result.group("周次")), cls.parse_day_of_week(obj)
         )
 
-        if obj["FILEURL"] is not None:
+        if obj.FILEURL is not None:
             description = f"""【课程交流码】
-http://jw.hitsz.edu.cn/byyfile{obj["FILEURL"]}
-{obj["KCWZSM"] or ""}"""
+http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
+{obj.KCWZSM or ""}"""
 
         return cls(
             name,
@@ -185,12 +187,12 @@ http://jw.hitsz.edu.cn/byyfile{obj["FILEURL"]}
         )
 
     @classmethod
-    def parse_lab(cls, obj: dict) -> Self | None:
+    def parse_lab(cls, obj: KbEntry) -> Self | None:
         pattern = r"""【实验】(?P<课程名称>[^\[\]]+)(\[(?P<实验名称>[^\[\]]+)\])?
 \[(?P<节次>[^\[\]]+)节\]\[(?P<周次>[^\[\]]+)周\]
 \[(?P<地点>[^\[\]]*)\]"""
 
-        result = re.match(pattern, obj["SKSJ"])
+        result = re.match(pattern, obj.SKSJ)
 
         if result is None:
             return None
@@ -200,7 +202,7 @@ http://jw.hitsz.edu.cn/byyfile{obj["FILEURL"]}
         location = result.group("地点")
         time_slot_ranges = cls.determine_time_slot_ranges(
             result.group("节次"),
-            obj["KEY"][6],  # '5' as in 'xq1_jc5'
+            obj.KEY[6],  # '5' as in 'xq1_jc5'
         )
         time_ranges = [
             (time_slot_mapping[t[0]][0], time_slot_mapping[t[1]][1])
@@ -214,13 +216,13 @@ http://jw.hitsz.edu.cn/byyfile{obj["FILEURL"]}
         return cls(name, dates, time_ranges, location, LAB, lab_name=lab_name)
 
     @classmethod
-    def parse_exam(cls, obj: dict) -> Self | None:
+    def parse_exam(cls, obj: KbEntry) -> Self | None:
         pattern = r"""【[^【】]*考试】\n?(?P<名称>.+)
 (?P<日期>.+)
 (?P<时间>.+)
 (?P<地点>.+)"""
 
-        result = re.match(pattern, obj["SKSJ"])
+        result = re.match(pattern, obj.SKSJ)
 
         if result is None:
             return None
@@ -239,10 +241,10 @@ http://jw.hitsz.edu.cn/byyfile{obj["FILEURL"]}
         return cls(name, _parse_date(result.group("日期")), time_ranges, location, EXAM)
 
     @classmethod
-    def from_XsksByxhList_item(cls, obj):
-        name = f"{obj['KCMC']} {obj['KSSJDMC']}考试"
-        location = obj["CDDM"]
-        time_ranges_str = obj["KSJTSJ"].split("-")
+    def from_XsksByxhList_item(cls, obj: XsksEntry):
+        name = f"{obj.KCMC} {obj.KSSJDMC}考试"
+        location = obj.CDDM
+        time_ranges_str = obj.KSJTSJ.split("-")
         time_ranges = [
             _to_time_span(
                 *map(
@@ -253,7 +255,7 @@ http://jw.hitsz.edu.cn/byyfile{obj["FILEURL"]}
 
         return cls(
             name,
-            datetime.datetime.fromisoformat(obj["KSRQ"]).astimezone(
+            datetime.datetime.fromisoformat(obj.KSRQ).astimezone(
                 zoneinfo.ZoneInfo("Asia/Shanghai")
             ),
             time_ranges,
@@ -332,13 +334,13 @@ class Schedule:
     @classmethod
     def from_json(
         cls,
-        obj: list[dict[str, dict]],
+        obj: list[KbEntry],
         error_entries: set[str] | None = None,
         start_date: datetime.date | None = None,
     ):
         entries: list[ScheduleEntry] = []
         for item in obj:
-            if item["KEY"] == "bz":
+            if item.KEY == "bz":
                 # 忽略备注条目
                 continue
             entry = None
@@ -390,7 +392,7 @@ class Schedule:
     @classmethod
     def from_exam_json(
         cls,
-        obj: list[dict],
+        obj: list[XsksEntry],
         error_entries: set[str] | None = None,
         start_date: datetime.date | None = None,
     ):

@@ -19,6 +19,7 @@ dependencies = [
     "cryptography>=44.0.3",
     "fake-useragent>=2.2.0",
     "idshit @ git+https://github.com/Zjl37/idshit.py.git",
+    "pydantic>=2.11.7",
 ]
 requires-python = ">=3.12"
 readme = "README.md"
