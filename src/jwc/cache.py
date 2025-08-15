@@ -150,43 +150,6 @@ def cli_auth_idshit_pwd(session: requests.Session):
     return
 
 
-def cli_auth_szsso(session: requests.Session):
-    """
-    深圳校区统一身份认证系统（密码登录）〔已失效，请勿使用！〕
-    """
-    click.echo("=== 正在代为你登录*深圳校区*统一身份认证系统 ===")
-    username: str = click.prompt("请输入用户名（学号）", prompt_suffix="：")
-    password: str = click.prompt("请输入密码", prompt_suffix="：", hide_input=True)
-
-    from jwc.szsso_login import auth_login
-
-    success, msg = auth_login(session, username.strip(), password)
-    if not success:
-        click.echo("[!] " + msg)
-        session = None
-        raise Exception(msg)
-    click.echo("[i] " + msg)
-
-
-def cli_auth_union_szsso(session: requests.Session):
-    """
-    本部统一身份认证平台联合登录，跳转深圳校区统一身份认证系统（密码登录）〔已失效，请勿使用！〕
-    """
-    # 深圳校区统一身份认证系统（密码登录）
-    click.echo("=== 正在代为你登录*深圳校区*统一身份认证系统 ===")
-    username: str = click.prompt("请输入用户名（学号）", prompt_suffix="：")
-    password: str = click.prompt("请输入密码", prompt_suffix="：", hide_input=True)
-
-    from jwc.login import auth_login
-
-    success, msg = auth_login(session, username.strip(), password)
-    if not success:
-        click.echo("[!] " + msg)
-        session = None
-        raise Exception(msg)
-    click.echo("[i] " + msg)
-
-
 def cli_auth_qr(session: requests.Session):
     # 本部统一身份认证平台（哈工大APP扫码）
     click.echo("=== 正在代为你登录*本部*统一身份认证平台 ===")
