@@ -134,8 +134,7 @@ class ScheduleEntry:
     def parse_day_of_week(obj: KbEntry) -> Literal[1, 2, 3, 4, 5, 6, 7]:
         r = int(obj.KEY[2])
         if r not in [1, 2, 3, 4, 5, 6, 7]:
-            print(f"[!] warning: weird day_of_week {r} on this entry:")
-            print(json.dumps(obj, ensure_ascii=False))
+            raise ValueError(f"weird day_of_week {r} on this entry")
         return r
 
     @staticmethod
@@ -349,7 +348,7 @@ class Schedule:
         obj: list[KbEntry],
         semester_desc: str,
         start_date: datetime.date,
-        error_entries: set[str] | None = None,
+        error_entries: list[dict[str, str]] | None = None,
     ):
         entries: list[ScheduleEntry] = []
         for item in obj:
@@ -363,14 +362,15 @@ class Schedule:
                     or ScheduleEntry.parse_lab(item)
                     or ScheduleEntry.parse_lesson(item)
                 )
-            except Exception as e:
-                print(f"[!] Error while parsing entry: {e}")
-                print(traceback.format_exc())
-            if entry is None:
+            except ValueError as e:
                 if error_entries is not None:
-                    error_entries.add(json.dumps(item, ensure_ascii=False))
+                    error_entries.append({
+                        "entry": json.dumps(item, ensure_ascii=False),
+                        "reason": str(e)
+                    })
                 continue
-            entries.append(entry)
+            if entry is not None:
+                entries.append(entry)
         return cls(entries, semester_desc, start_date)
 
     def to_ics(self) -> ics.Calendar:
@@ -413,19 +413,19 @@ class Schedule:
         obj: list[XsksEntry],
         semester_desc: str,
         start_date: datetime.date,
-        error_entries: set[str] | None = None,
+        error_entries: list[dict[str, str]] | None = None,
     ):
         entries: list[ScheduleEntry] = []
         for item in obj:
             entry = None
             try:
                 entry = ScheduleEntry.from_XsksByxhList_item(item)
-            except Exception as e:
-                print(f"[!] Error while parsing entry: {e}")
-                print(traceback.format_exc())
-            if entry is None:
+            except ValueError as e:
                 if error_entries is not None:
-                    error_entries.add(json.dumps(item, ensure_ascii=False))
+                    error_entries.append({
+                        "entry": json.dumps(item, ensure_ascii=False),
+                        "reason": str(e)
+                    })
                 continue
             entries.append(entry)
         return cls(entries, semester_desc, start_date)
