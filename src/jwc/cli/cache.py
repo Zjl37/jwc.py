@@ -3,43 +3,11 @@ import json
 import datetime
 import time
 from typing import TypeAlias, cast
-from pydantic import BaseModel
 import click
 import os
 
-from jwc.fetch import get_session
-
-
-class CurrentSemester(BaseModel):
-    XNXQ_EN: str
-    XN: str
-    XNXQ: str
-    XQ: str
-
-
-class KbEntry(BaseModel):
-    KCWZSM: None | str
-    RWH: None | str
-    SKFS: None | str
-    SFFXEXW: None | str
-    FILEURL: str | None = None
-    SKSJ: str
-    XB: int
-    SKSJ_EN: None | str = None
-    KEY: str
-
-
-class XsksEntry(BaseModel):
-    KCMC: str
-    KSSJDMC: str
-    CDDM: str
-    KSJTSJ: str
-    KSRQ: str
-
-
-JSON_ro: TypeAlias = (
-    Mapping[str, "JSON_ro"] | Sequence["JSON_ro"] | str | int | float | bool | None
-)
+from .fetch import get_session
+from ..jwapi_model import CurrentSemester, KbEntry, XsksEntry
 
 
 def jwc_cache_dir():

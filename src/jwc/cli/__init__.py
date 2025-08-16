@@ -6,9 +6,9 @@ from typing import cast
 
 from click.decorators import FC
 from . import cache
-from .schedule import Schedule, get_calendar_name, get_semester_desc_brief
+from ..schedule import Schedule, get_calendar_name, get_semester_desc_brief
 import jwc.phxp
-import jwc.phxp.cache
+from . import phxp_cache
 
 def parse_semester_arg(s: str) -> tuple[str, str]:
     """解析命令行中的学期选项，返回 (学年, 学期) 元组"""
@@ -109,7 +109,7 @@ def exam_to_ics(semester: str | None, out_file: str) -> None:
     report_error_entries(error_entries, kind="考试")
 
     calendar = schedule.to_ics()
-    from .schedule import EXAM
+    from ..schedule import EXAM
 
     calendar_name = get_calendar_name(get_semester_desc_brief(xn, xq), EXAM)
     ics_filename = out_file or f"{cache.jwc_cache_dir()}/out/{calendar_name}.ics"
@@ -163,7 +163,7 @@ def phxp_to_ics(out_file: str, semester: str | None):
     start_date = cache.semester_start_date(xn, xq)
     semester_desc = get_semester_desc_brief(xn, xq)
 
-    obj = jwc.phxp.cache.LoadUsedLabCourses()
+    obj = phxp_cache.LoadUsedLabCourses()
     schedule = jwc.phxp.create_schedule_from(obj, semester_desc, start_date)
     calendar = schedule.to_ics()
     course_name = obj["rows"][0]["CourseName"]

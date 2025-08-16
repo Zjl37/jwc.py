@@ -9,8 +9,8 @@ import datetime
 import re
 import traceback
 from . import preprocess
-from .cache import XsksEntry
-from .cache import KbEntry
+from jwc.jwapi_model import XsksEntry
+from jwc.jwapi_model import KbEntry
 
 
 ScheduleEntryKind = Enum("ScheduleEntryKind", ["LESSON", "EXAM", "LAB"])
