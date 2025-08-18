@@ -6,20 +6,22 @@ import datetime
 
 import openpyxl.utils
 from ..schedule import LAB, Schedule, ScheduleEntry
+from ..jwapi_model import ErrorEntry
+from .api_model import PhxpLabCourse, PhxpResponse
 
 
 def arrange(
     in_file: str | IO[bytes],
     out_file: str,
     schedule: Schedule,
-    error_entries: list[dict[str, str]] | None = None,
+    error_entries: list[ErrorEntry] | None = None,
 ):
     # Load workbook and worksheet
     wb = load_workbook(in_file)
     ws = wb.active
 
     if ws is None:
-        raise ValueError("Error: no active workseet in file!")
+        raise ValueError("出错了：无法加载活动工作表")
 
     # Insert new conflict course column
     original_max_col = ws.max_column
@@ -78,15 +80,17 @@ def arrange(
                 "周六": 6,
                 "周日": 7,
             }
-            q_day_of_week = day_mapping.get(current_day_of_week)
+            q_day_of_week = day_mapping.get(str(current_day_of_week))
             if q_day_of_week is None:
                 raise ValueError(f"无效的星期格式: {current_day_of_week}")
 
             # Parse date
             if isinstance(current_date, str):
                 q_date = datetime.datetime.strptime(current_date, "%Y.%m.%d")
-            else:
+            elif isinstance(current_date, datetime.datetime):
                 q_date = current_date  # Assume datetime object
+            else:
+                raise ValueError(f"无效的日期格式: {current_date}")
 
             # Parse time span
             time_span = ws.cell(row=row_idx, column=4).value
@@ -97,51 +101,56 @@ def arrange(
 
             # Query for conflicts
             conflicts = schedule.query_lesson_at(
-                int(current_week_id), q_date, q_day_of_week, q_time_span
+                int(str(current_week_id)), q_date, q_day_of_week, q_time_span
             )
             conflict_names = [e.lab_name or e.name for e in conflicts]
-            ws.cell(row=row_idx, column=new_col_idx, value="，".join(conflict_names))
+            _ = ws.cell(row=row_idx, column=new_col_idx, value="，".join(conflict_names))
 
         except ValueError as e:
             if error_entries is not None:
                 error_entries.append(
-                    {
-                        "entry": f"第 {row_idx} 行："
+                    ErrorEntry(
+                        entry=f"第 {row_idx} 行："
                         + "\t".join(
                             str(ws.cell(row=row_idx, column=col).value)
                             for col in range(1, ws.max_column + 1)
                         ),
-                        "reason": str(e),
-                    }
+                        reason=str(e),
+                    )
                 )
             continue
 
-    ws.cell(row=header_row, column=new_col_idx, value="冲突课程")
+    _ = ws.cell(row=header_row, column=new_col_idx, value="冲突课程")
     col_letter = openpyxl.utils.get_column_letter(new_col_idx)
     ws.auto_filter.ref = f"{col_letter}{header_row}:{col_letter}{ws.max_row}"
 
     wb.save(out_file)
 
 
-def parse_lab_entry(item: dict):
+def parse_lab_entry(item: PhxpLabCourse):
     zone = zoneinfo.ZoneInfo("Asia/Shanghai")
-    _add_tz = lambda t: datetime.datetime.strptime(t, "%H:%M").time().replace(tzinfo=zone)
+
+    def _add_tz(t: str):
+        return datetime.datetime.strptime(t, "%H:%M").time().replace(tzinfo=zone)
+
     return ScheduleEntry(
-        item["ModuleName"],
-        datetime.datetime.strptime(item["ClassDate"], "%Y/%m/%d %H:%M:%S").date(),
-        [(_add_tz(item["StartTime"]), _add_tz(item["EndTime"]))],
-        item["ClassRoom"],
+        item.ModuleName,
+        datetime.datetime.strptime(item.ClassDate, "%Y/%m/%d %H:%M:%S").date(),
+        [(_add_tz(item.StartTime), _add_tz(item.EndTime))],
+        item.ClassRoom,
         LAB,
-        teacher=item["TeacherName"],
-        lab_name=item["LabName"],
+        teacher=item.TeacherName,
+        lab_name=item.LabName,
     )
 
 
-def create_schedule_from(obj: dict, semester_desc: str, start_date: datetime.date):
-    entries = []
-    for item in obj["rows"]:
+def create_schedule_from(
+    obj: PhxpResponse, semester_desc: str, start_date: datetime.date
+):
+    entries: list[ScheduleEntry] = []
+    for item in obj.rows:
         entry = parse_lab_entry(item)
-        if entry is None:
-            raise ValueError(f"遇到无法解析的课表条目。")
+        # if entry is None:
+        #     raise ValueError(f"遇到无法解析的课表条目。")
         entries.append(entry)
     return Schedule(entries, semester_desc, start_date)

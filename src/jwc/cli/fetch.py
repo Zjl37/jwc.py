@@ -8,6 +8,7 @@ from PIL import Image
 import io
 from textual_image.renderable import Image as TextImage
 import rich
+from typing import cast
 
 
 def cli_auth_cookie(session: requests.Session):
@@ -29,7 +30,7 @@ def cli_auth_idshit_pwd(session: requests.Session):
     # 本部统一身份认证平台（密码登录）
     click.echo("=== 正在代为你登录*本部*统一身份认证平台 ===")
 
-    username: str = click.prompt("请输入用户名（学号）", prompt_suffix="：")
+    username = cast(str, click.prompt("请输入用户名（学号）", prompt_suffix="："))
 
     try:
         need_captcha = check_need_captcha(session, username)
@@ -42,7 +43,7 @@ def cli_auth_idshit_pwd(session: requests.Session):
         click.secho(msg, bg="black", fg="yellow")
         raise NotImplementedError(msg)
 
-    password: str = click.prompt("请输入密码", prompt_suffix="：", hide_input=True)
+    password = cast(str, click.prompt("请输入密码", prompt_suffix="：", hide_input=True))
 
     err, res = auth_login(
         session, username.strip(), password, service="http://jw.hitsz.edu.cn/casLogin"
@@ -52,7 +53,6 @@ def cli_auth_idshit_pwd(session: requests.Session):
     if err:
         if err is not True:
             click.echo("[!] 错误提示：" + err)
-        session = None
         raise Exception(err)
 
     if "/authentication/main" not in res.url:
@@ -101,7 +101,6 @@ def cli_auth_qr(session: requests.Session):
     if err:
         if err is not True:
             click.echo("[!] 错误提示：" + err)
-        session = None
         raise Exception(err)
 
     if "/authentication/main" not in res.url:
@@ -126,7 +125,7 @@ def get_session(force: bool = False) -> requests.Session:
         {"User-Agent": fake_useragent.UserAgent(platforms="desktop").random}
     )
 
-    auth_choice: str = click.prompt(
+    auth_choice: str = click.prompt(  # pyright: ignore[reportAny]
         """认证方式？
         [1] 本部统一身份认证平台（哈工大APP扫码）〔推荐〕
         [2] 本部统一身份认证平台（密码登录）
@@ -136,7 +135,7 @@ def get_session(force: bool = False) -> requests.Session:
         default="1",
         show_choices=False,
         show_default=False,
-        prompt_suffix=">"
+        prompt_suffix=">",
     )
 
     if auth_choice.strip().startswith("3"):

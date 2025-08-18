@@ -2,15 +2,19 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal, Self
 from enum import Enum
-import ics
-import json
+import ics  # pyright: ignore[reportMissingTypeStubs]
 import zoneinfo
 import datetime
 import re
-import traceback
 from . import preprocess
-from jwc.jwapi_model import XsksEntry
-from jwc.jwapi_model import KbEntry
+from jwc.jwapi_model import (
+    XsksEntry,
+    KbEntry,
+    ErrorEntry,
+    XsksList,
+    XszykbzongResponse,
+)
+from typing import cast
 
 
 ScheduleEntryKind = Enum("ScheduleEntryKind", ["LESSON", "EXAM", "LAB"])
@@ -49,7 +53,7 @@ def _to_ranges(text: str) -> list[tuple[int, int]]:
 
 
 def _to_time_span(
-    from_hr, from_min, to_hr, to_min
+    from_hr: int, from_min: int, to_hr: int, to_min: int
 ) -> tuple[datetime.time, datetime.time]:
     zone = zoneinfo.ZoneInfo("Asia/Shanghai")
     return (
@@ -79,7 +83,7 @@ class ScheduledDates:
     weeks: list[int]
     day_of_week: Literal[1, 2, 3, 4, 5, 6, 7]
 
-    def all_dates(self, semester_start_date):
+    def all_dates(self, semester_start_date: datetime.date):
         return (
             semester_start_date
             + datetime.timedelta(days=7 * (week - 1) + (self.day_of_week - 1))
@@ -103,7 +107,7 @@ def _parse_date(text: str, d0: datetime.date) -> datetime.date:
 
 
 def _parse_scheduled_weeks(text: str) -> list[int]:
-    result = []
+    result: list[int] = []
     for span in text.split(","):
         if "-" not in span:
             result.append(int(span))
@@ -135,7 +139,7 @@ class ScheduleEntry:
         r = int(obj.KEY[2])
         if r not in [1, 2, 3, 4, 5, 6, 7]:
             raise ValueError(f"weird day_of_week {r} on this entry")
-        return r
+        return cast(Literal[1, 2, 3, 4, 5, 6, 7], r)
 
     @staticmethod
     def determine_time_slot_ranges(
@@ -251,7 +255,7 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
         )
 
     @classmethod
-    def from_XsksByxhList_item(cls, obj: XsksEntry):
+    def from_XsksList_item(cls, obj: XsksEntry):
         name = f"{obj.KCMC} {obj.KSSJDMC}考试"
         location = obj.CDDM
         time_ranges_str = obj.KSJTSJ.split("-")
@@ -302,14 +306,16 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
         return f"""{self.name + "\n" if self.kind == LAB and self.lab_name else ""}
         {self.description}"""
 
-    def to_ics_event(self, semester_start_date, categories) -> Iterable[ics.Event]:
+    def to_ics_event(
+        self, semester_start_date: datetime.date, categories: list[str]
+    ) -> Iterable[ics.Event]:
         for t0, t1 in self.time_ranges:
             # ics-py 尚未支持重复日程，故作展开
             # https://github.com/ics-py/ics-py/issues/14
             match self.dates:
                 case datetime.date():
                     dates = [self.dates]
-                case ScheduledDates(week_ranges, day_of_week):
+                case ScheduledDates():
                     dates = list(self.dates.all_dates(semester_start_date))
             for date in dates:
                 d0 = datetime.datetime.combine(date, t0)
@@ -345,13 +351,13 @@ class Schedule:
     @classmethod
     def from_kb(
         cls,
-        obj: list[KbEntry],
+        obj: XszykbzongResponse,
         semester_desc: str,
         start_date: datetime.date,
-        error_entries: list[dict[str, str]] | None = None,
+        error_entries: list[ErrorEntry] | None = None,
     ):
         entries: list[ScheduleEntry] = []
-        for item in obj:
+        for item in obj.root:
             if item.KEY == "bz":
                 # 忽略备注条目
                 continue
@@ -364,10 +370,9 @@ class Schedule:
                 )
             except ValueError as e:
                 if error_entries is not None:
-                    error_entries.append({
-                        "entry": json.dumps(item, ensure_ascii=False),
-                        "reason": str(e)
-                    })
+                    error_entries.append(
+                        ErrorEntry(entry=item.model_dump_json(), reason=str(e))
+                    )
                 continue
             if entry is not None:
                 entries.append(entry)
@@ -410,22 +415,21 @@ class Schedule:
     @classmethod
     def from_xsks(
         cls,
-        obj: list[XsksEntry],
+        obj: XsksList,
         semester_desc: str,
         start_date: datetime.date,
-        error_entries: list[dict[str, str]] | None = None,
+        error_entries: list[ErrorEntry] | None = None,
     ):
         entries: list[ScheduleEntry] = []
-        for item in obj:
+        for item in obj.root:
             entry = None
             try:
-                entry = ScheduleEntry.from_XsksByxhList_item(item)
+                entry = ScheduleEntry.from_XsksList_item(item)
             except ValueError as e:
                 if error_entries is not None:
-                    error_entries.append({
-                        "entry": json.dumps(item, ensure_ascii=False),
-                        "reason": str(e)
-                    })
+                    error_entries.append(
+                        ErrorEntry(entry=item.model_dump_json(), reason=str(e))
+                    )
                 continue
             entries.append(entry)
         return cls(entries, semester_desc, start_date)

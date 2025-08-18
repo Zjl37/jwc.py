@@ -1,9 +1,9 @@
 import re
 
-T_LESSON_RULES = [
+T_LESSON_RULES_RAW = [
     (r"物理实验", "🔬"),
     (r"电.+实验", "⚡"),
-
+    #
     (r"思想道德与法治", "🟢"),
     (r"形势与政策", "⚪"),
     (r"习.+概", "🔴"),
@@ -28,7 +28,7 @@ T_LESSON_RULES = [
     (r"信号与系统", "🟪"),
     (r"计算机系统", "⬛️"),
     (r"数据结构", "🌳"),
-
+    #
     (r"田径", "🏃"),
     (r"排球", "🏐"),
     (r"篮球", "🏀"),
@@ -37,11 +37,11 @@ T_LESSON_RULES = [
     (r"游泳", "🏊‍"),
     (r"街舞", "👯"),
     (r"体育[\s\S]+基", "‍🦵"),
-
+    #
     (r"数字逻辑", "🟧"),
     (r"计算机组成原理", "🖥️"),
     (r"软件体系结构", "💻"),
-
+    #
     (r"天文", "🔭"),
     (r"行星", "🪐"),
     (r"深空", "🌌"),
@@ -96,7 +96,8 @@ T_LESSON_RULES = [
     (r"海", "🌊"),
 ]
 T_LESSON_RULES = list(
-    map(lambda r: (re.compile(r[0], flags=re.M), r[1]), T_LESSON_RULES))
+    map(lambda r: (re.compile(r[0], flags=re.M), r[1]), T_LESSON_RULES_RAW)
+)
 
 
 def transform_lesson_name(name: str) -> str:
@@ -107,7 +108,7 @@ def transform_lesson_name(name: str) -> str:
     return name
 
 
-T_LAB_RULES = [
+T_LAB_RULES_RAW = [
     (r"逻辑", "▶️"),
     (r"物理实验", "🔬"),
     (r"电.+实验", "⚡"),
@@ -116,13 +117,11 @@ T_LAB_RULES = [
     (r"计算机系统", "💣"),
     (r"计算机组成原理", "🖥️"),
     (r"数据结构", "🪵"),
-
+    #
     (r"大模型", "💬"),
     (r"网络安全", "🔐"),
 ]
-T_LAB_RULES = list(
-    map(lambda r: (re.compile(r[0], flags=re.M), r[1]), T_LAB_RULES)
-)
+T_LAB_RULES = list(map(lambda r: (re.compile(r[0], flags=re.M), r[1]), T_LAB_RULES_RAW))
 
 
 def transform_lab_name(name: str, lab_name: str) -> str:
@@ -133,7 +132,7 @@ def transform_lab_name(name: str, lab_name: str) -> str:
     return name
 
 
-T_LOCATION_RULES = [
+T_LOCATION_RULES_RAW = [
     (r"^(A.+)", "\\1\n哈尔滨工业大学深圳校区A栋 平山一路6号"),
     (r"^(F.+)", "\\1\n哈尔滨工业大学深圳校区F栋\n平山一路"),
     (r"^(G.+)", "\\1\n中国广东省深圳市南山区哈尔滨工业大学深圳校区G栋"),
@@ -147,7 +146,8 @@ T_LOCATION_RULES = [
     (r"哈工大田径场", "哈尔滨工业大学深圳校区运动场"),
 ]
 T_LOCATION_RULES = list(
-    map(lambda r: (re.compile(r[0], flags=re.M), r[1]), T_LOCATION_RULES))
+    map(lambda r: (re.compile(r[0], flags=re.M), r[1]), T_LOCATION_RULES_RAW)
+)
 
 
 def location_detail(text: str) -> str:

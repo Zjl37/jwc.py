@@ -1,9 +1,9 @@
-import json
 import os
 from .cache import jwc_cache_dir
+from ..phxp.api_model import PhxpResponse
 
 
-def LoadUsedLabCourses(path: str | None = None):
+def LoadUsedLabCourses(path: str | None = None) -> PhxpResponse:
     if path is None:
         path = f"{jwc_cache_dir()}/phxp/response-LoadUsedLabCourses.json"
     if not os.path.isfile(path):
@@ -13,4 +13,4 @@ def LoadUsedLabCourses(path: str | None = None):
         exit(1)
 
     with open(path) as json_file:
-        return json.load(json_file)
+        return PhxpResponse.model_validate_json(json_file.read())

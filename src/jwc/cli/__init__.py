@@ -2,11 +2,11 @@ import os
 import re
 import click
 import datetime
-from typing import cast
 
 from click.decorators import FC
 from . import cache
 from ..schedule import Schedule, get_calendar_name, get_semester_desc_brief
+from ..jwapi_model import ErrorEntry
 import jwc.phxp
 from . import phxp_cache
 
@@ -60,15 +60,15 @@ def fetch(semester: str | None):
     click.echo("[i] 缓存已更新")
 
 
-def report_error_entries(error_entries: list[dict[str, str]], kind: str = "课表"):
+def report_error_entries(error_entries: list[ErrorEntry], kind: str = "课表"):
     if len(error_entries):
         click.secho(
             f"[!] 遇到无法解析的{kind}条目。以下课程将不会添加到生成的日历中。可能需要向开发者反馈此问题。",
             fg="red",
         )
         for e in error_entries:
-            click.secho(e["entry"], fg="yellow")
-            click.secho(" ↳ 原因：" + e["reason"], fg="red")
+            click.secho(e.entry, fg="yellow")
+            click.secho(" ↳ 原因：" + e.reason, fg="red")
 
 
 @cli.command()
@@ -78,7 +78,7 @@ def to_ics(semester: str | None, out_file: str):
     """【教务课表导出】由课程表生成 ics 日历文件"""
     xn, xq = parse_semester_arg(semester) if semester else cache.current_semester()
     data = cache.xszykbzong(xn, xq)
-    error_entries: list[dict[str, str]] = []
+    error_entries: list[ErrorEntry] = []
     # 动态获取学期开始日期
     start_date = cache.semester_start_date(xn, xq)
     schedule = Schedule.from_kb(
@@ -104,7 +104,7 @@ def exam_to_ics(semester: str | None, out_file: str) -> None:
     data = cache.XsksByxhList()
     start_date = cache.semester_start_date(xn, xq)
     semester_desc = get_semester_desc_brief(xn, xq)
-    error_entries: list[dict[str, str]] = []
+    error_entries: list[ErrorEntry] = []
     schedule = Schedule.from_xsks(data, semester_desc, start_date, error_entries)
     report_error_entries(error_entries, kind="考试")
 
@@ -141,14 +141,14 @@ def phxp_arrange(in_file: str, out_file: str | None, semester: str | None):
             f"{parts[0]}+arranged.xlsx" if len(parts) > 1 else f"{in_file}+arranged"
         )
 
-    error_entries: list[dict[str, str]] = []
+    error_entries: list[ErrorEntry] = []
     jwc.phxp.arrange(in_file, out_file, schedule, error_entries)
 
     if len(error_entries):
         click.secho(f"[i] 跳过了表格中的这些行：", fg="yellow")
         for e in error_entries:
-            click.secho(e["entry"])
-            click.secho(" ↳ 原因：" + e["reason"], fg="yellow")
+            click.secho(e.entry)
+            click.secho(" ↳ 原因：" + e.reason, fg="yellow")
 
     print(f"[i] 输出文件已写到 {out_file}")
 
@@ -166,7 +166,7 @@ def phxp_to_ics(out_file: str, semester: str | None):
     obj = phxp_cache.LoadUsedLabCourses()
     schedule = jwc.phxp.create_schedule_from(obj, semester_desc, start_date)
     calendar = schedule.to_ics()
-    course_name = obj["rows"][0]["CourseName"]
+    course_name = obj.rows[0].CourseName
     ics_filename = (
         out_file
         or f"{cache.jwc_cache_dir()}/out/{course_name} - {datetime.date.today().strftime('%m月%d日')}更新.ics"

@@ -1,13 +1,20 @@
-from collections.abc import Mapping, Sequence
-import json
 import datetime
 import time
-from typing import TypeAlias, cast
+from typing import cast
 import click
 import os
 
+from pydantic import ValidationError
+import requests
+
 from .fetch import get_session
-from ..jwapi_model import CurrentSemester, KbEntry, XsksEntry
+from ..jwapi_model import (
+    CurrentSemester,
+    RlZcSjResponse,
+    XsksByxhListResponse,
+    XsksList,
+    XszykbzongResponse,
+)
 
 
 def jwc_cache_dir():
@@ -39,7 +46,8 @@ def current_semester() -> tuple[str, str]:
         ) > 30 * 86400:
             click.secho("[i] 学期信息缓存超过30天，自动刷新...", fg="yellow")
             return refresh_semester_cache()
-        semester = CurrentSemester.model_validate(json.load(open(cache_file)))
+        with open(cache_file) as f:
+            semester = CurrentSemester.model_validate_json(f.read())
         return semester.XN, semester.XQ
     except:
         return refresh_semester_cache()
@@ -49,7 +57,7 @@ def refresh_semester_cache():
     cache_file = f"{jwc_cache_dir()}/current_semester.json"
     semester = request_current_semester()
     with open(cache_file, "w") as f:
-        json.dump(semester.model_dump(), f)
+        _ = f.write(semester.model_dump_json())
     return semester.XN, semester.XQ
 
 
@@ -75,42 +83,45 @@ def request_xszykbzong(xn: str, xq: str):
         path = f"{cache_dir}/response-queryxszykbzong.json"
         with open(path, "w") as file:
             _ = file.write(response.text)
+        # Validate the response immediately
+        try:
+            _ = XszykbzongResponse.model_validate_json(response.text)
+        except Exception as e:
+            click.secho(f"[!] 验证课表数据时出错: {e}", fg="red")
     else:
         print(f"[!] 在请求 queryxszykbzong 时出错了：{response.status_code}")
 
 
-def xszykbzong(xn: str, xq: str, path: str = "", text: str = "") -> list[KbEntry]:
+def xszykbzong(xn: str, xq: str, path: str = "", text: str = "") -> XszykbzongResponse:
     """返回缓存的 queryxszykbzong 数据，如未找到则向服务器请求"""
     if text != "":
-        raw_data = json.loads(text)
-    else:
-        default_path = f"{semester_cache_dir(xn, xq)}/response-queryxszykbzong.json"
-        path = path or default_path
+        return XszykbzongResponse.model_validate_json(text)
 
-        def should_fetch():
-            if not os.path.isfile(path):
-                return True
+    default_path = f"{semester_cache_dir(xn, xq)}/response-queryxszykbzong.json"
+    path = path or default_path
 
-            now = time.time()
-            DAY = 24 * 60 * 60  # seconds
-            stale_time = now - os.path.getmtime(path)
+    def should_fetch():
+        if not os.path.isfile(path):
+            return True
 
-            if stale_time > 7 * DAY:
-                ans = click.prompt(
-                    f"[?] 缓存中的课表已有 {int(stale_time) // DAY} 天未更新，要重新获取吗？[Y/n]",
-                    default="y",
-                    type=str,
-                    show_default=False,
-                )
-                return not cast(str, ans).lower().startswith("n")
+        now = time.time()
+        DAY = 24 * 60 * 60  # seconds
+        stale_time = now - os.path.getmtime(path)
 
-        if should_fetch():
-            request_xszykbzong(xn, xq)
+        if stale_time > 7 * DAY:
+            ans = click.prompt(  # pyright: ignore[reportAny]
+                f"[?] 缓存中的课表已有 {int(stale_time) // DAY} 天未更新，要重新获取吗？[Y/n]",
+                default="y",
+                type=str,
+                show_default=False,
+            )
+            return not cast(str, ans).lower().startswith("n")
 
-        with open(path) as f:
-            raw_data = json.load(f)
+    if should_fetch():
+        request_xszykbzong(xn, xq)
 
-    return [KbEntry.model_validate(item) for item in raw_data]
+    with open(path) as f:
+        return XszykbzongResponse.model_validate_json(f.read())
 
 
 def request_semester_start_date(xn: str, xq: str):
@@ -122,11 +133,11 @@ def request_semester_start_date(xn: str, xq: str):
     )
 
     if response.ok:
-        data = response.json()
+        data = RlZcSjResponse.model_validate(response.json())
         # 找到星期一（xqj=1）的日期
-        for entry in data.get("content", []):
-            if entry.get("xqj") == "1":
-                start_date = datetime.datetime.strptime(entry["rq"], "%Y-%m-%d").date()
+        for entry in data.content:
+            if entry.xqj == "1":
+                start_date = datetime.datetime.strptime(entry.rq, "%Y-%m-%d").date()
                 cache_file = f"{semester_cache_dir(xn, xq)}/semester_start_date.txt"
                 with open(cache_file, "w") as f:
                     _ = f.write(start_date.isoformat())
@@ -178,17 +189,23 @@ def request_XsksByxhList():
     }
 
     resp = request_XsksByxhList_page(session, q, 1)
+    l = resp.list
 
-    l = resp["list"]
-    for i in range(2, resp["navigateLastPage"] + 1):
-        l += request_XsksByxhList_page(session, q, i)
+    # Process remaining pages
+    for i in range(2, resp.navigateLastPage + 1):
+        l += request_XsksByxhList_page(session, q, i).list
 
     print(f"[i] 已更新 XsksByxhList")
+    # Create XsksResponse from validated entries
+    all_entries = XsksList(l)
     with open(f"{jwc_cache_dir()}/response-queryXsksByxhList.json", "w") as file:
-        _ = file.write(json.dumps(l, ensure_ascii=False))
+        _ = file.write(all_entries.model_dump_json())
+    return all_entries
 
 
-def request_XsksByxhList_page(session, q, page):
+def request_XsksByxhList_page(
+    session: requests.Session, q: dict[str, str], page: int
+) -> XsksByxhListResponse:
     request_data = q | {
         "pageNum": str(page),
         "pageSize": "100",
@@ -201,13 +218,22 @@ def request_XsksByxhList_page(session, q, page):
     )
     if not response.ok:
         print(f"[!] 在请求 queryxszykbzong 时出错了：{response.status_code}")
-    return response.json()
+
+    try:
+        return XsksByxhListResponse.model_validate_json(response.text)
+    except ValidationError as e:
+        click.secho(response.text, fg="yellow")
+        click.secho(f"[!] ↑ 原始数据", fg="yellow")
+        click.secho(
+            f"[!] request_XsksByxhList: 验证第1页考试条目时出错: {e}", fg="yellow"
+        )
+        raise ValueError("由于以上错误，无法继续。请向开发者反馈此问题。")
 
 
-def XsksByxhList(path: str = "", text: str = "") -> list[XsksEntry]:
+def XsksByxhList(path: str = "", text: str = "") -> XsksList:
     """返回缓存的 queryXsksByxhList 数据，如未找到则向服务器请求"""
     if text != "":
-        raw_data = json.loads(text)
+        return XsksList.model_validate_json(text)
 
     if path == "":
         path = f"{jwc_cache_dir()}/response-queryXsksByxhList.json"
@@ -230,9 +256,7 @@ def XsksByxhList(path: str = "", text: str = "") -> list[XsksEntry]:
             return not cast(str, ans).lower().startswith("n")
 
     if should_fetch():
-        request_XsksByxhList()
+        return request_XsksByxhList()
 
     with open(path) as f:
-        raw_data = json.load(f)
-
-    return [XsksEntry.model_validate(item) for item in raw_data]
+        return XsksList.model_validate_json(f.read())
