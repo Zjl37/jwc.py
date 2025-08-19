@@ -4,11 +4,14 @@ import click
 import datetime
 
 from click.decorators import FC
+
+from jwc.schedule_preset_trules import TransformationResults
 from . import cache
 from ..schedule import Schedule, get_calendar_name, get_semester_desc_brief
 from ..jwapi_model import ErrorEntry
 import jwc.phxp
 from . import phxp_cache
+
 
 def parse_semester_arg(s: str) -> tuple[str, str]:
     """解析命令行中的学期选项，返回 (学年, 学期) 元组"""
@@ -71,6 +74,29 @@ def report_error_entries(error_entries: list[ErrorEntry], kind: str = "课表"):
             click.secho(" ↳ 原因：" + e.reason, fg="red")
 
 
+def _report_transformation_results(tr: TransformationResults):
+    if tr.untransformed_lessons or tr.untransformed_labs:
+        click.secho(
+            f"[i] 有以下若干个课程名称没有加 emoji / 没有匹配的预置重命名规则：",
+            fg="cyan",
+        )
+
+        if tr.untransformed_lessons:
+            click.secho("  课程名称：", fg="cyan")
+            for name in tr.untransformed_lessons:
+                click.secho(f"    • {name}", fg="yellow")
+
+        if tr.untransformed_labs:
+            click.secho("  实验名称：", fg="cyan")
+            for name in tr.untransformed_labs:
+                click.secho(f"    • {name}", fg="yellow")
+
+    if tr.untransformed_locations:
+        click.secho(f"[i] 有以下若干个地点没有匹配预置重命名规则：", fg="cyan")
+        for name in tr.untransformed_locations:
+            click.secho(f"    • {name}", fg="yellow")
+
+
 @cli.command()
 @add_semester_option
 @click.option("-o", "out_file", default=None, help="输出文件名")
@@ -86,13 +112,15 @@ def to_ics(semester: str | None, out_file: str):
     )
     report_error_entries(error_entries)
 
-    calendar = schedule.to_ics()
+    calendar, transformation_results = schedule.to_ics()
     calendar_name = get_calendar_name(get_semester_desc_brief(xn, xq))
     ics_filename = out_file or f"{cache.jwc_cache_dir()}/out/{calendar_name}.ics"
     os.makedirs(os.path.dirname(ics_filename), exist_ok=True)
     with open(ics_filename, "w") as f:
         _ = f.write(calendar.serialize())
         print(f"[i] 日历已写入 {ics_filename} 文件。")
+
+    _report_transformation_results(transformation_results)
 
 
 @cli.command()
@@ -108,7 +136,7 @@ def exam_to_ics(semester: str | None, out_file: str) -> None:
     schedule = Schedule.from_xsks(data, semester_desc, start_date, error_entries)
     report_error_entries(error_entries, kind="考试")
 
-    calendar = schedule.to_ics()
+    calendar, transformation_results = schedule.to_ics()
     from ..schedule import EXAM
 
     calendar_name = get_calendar_name(get_semester_desc_brief(xn, xq), EXAM)
@@ -117,6 +145,8 @@ def exam_to_ics(semester: str | None, out_file: str) -> None:
     with open(ics_filename, "w") as f:
         _ = f.write(calendar.serialize())
         print(f"[i] 日历已写入 {ics_filename} 文件。")
+
+    _report_transformation_results(transformation_results)
 
 
 @cli.command()
@@ -165,7 +195,7 @@ def phxp_to_ics(out_file: str, semester: str | None):
 
     obj = phxp_cache.LoadUsedLabCourses()
     schedule = jwc.phxp.create_schedule_from(obj, semester_desc, start_date)
-    calendar = schedule.to_ics()
+    calendar, transformation_results = schedule.to_ics()
     course_name = obj.rows[0].CourseName
     ics_filename = (
         out_file
@@ -175,6 +205,8 @@ def phxp_to_ics(out_file: str, semester: str | None):
     with open(ics_filename, "w") as f:
         _ = f.write(calendar.serialize())
         print(f"[i] 日历已写入 {ics_filename} 文件。")
+
+    _report_transformation_results(transformation_results)
 
 
 if __name__ == "__main__":

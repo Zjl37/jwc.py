@@ -1,4 +1,14 @@
 import re
+from dataclasses import dataclass
+from typing import NamedTuple
+
+
+@dataclass
+class TransformationResults:
+    untransformed_lessons: set[str]
+    untransformed_labs: set[str]
+    untransformed_locations: set[str]
+
 
 T_LESSON_RULES_RAW = [
     (r"物理实验", "🔬"),
@@ -41,6 +51,11 @@ T_LESSON_RULES_RAW = [
     (r"数字逻辑", "🟧"),
     (r"计算机组成原理", "🖥️"),
     (r"软件体系结构", "💻"),
+    (r"近世代数", "✖️"),
+    (r"计算机网络", "🕸️"),
+    (r"操作系统", "🐧"),
+    (r"软件构造", "💻"),
+    (r"电子工艺实习", "⚡"),
     #
     (r"天文", "🔭"),
     (r"行星", "🪐"),
@@ -100,12 +115,11 @@ T_LESSON_RULES = list(
 )
 
 
-def transform_lesson_name(name: str) -> str:
+def transform_lesson_name(name: str) -> tuple[str, bool]:
     for pattern, prefix in T_LESSON_RULES:
         if re.search(pattern, name):
-            return prefix + name
-    print(f"[i] Lesson name {name} is not transformed.")
-    return name
+            return prefix + name, True
+    return name, False
 
 
 T_LAB_RULES_RAW = [
@@ -124,14 +138,14 @@ T_LAB_RULES_RAW = [
 T_LAB_RULES = list(map(lambda r: (re.compile(r[0], flags=re.M), r[1]), T_LAB_RULES_RAW))
 
 
-def transform_lab_name(name: str, lab_name: str) -> str:
+def transform_lab_name(name: str, lab_name: str) -> tuple[str, bool]:
     for pattern, prefix in T_LAB_RULES:
         if re.search(pattern, name):
-            return prefix + (lab_name or name)
-    print(f"[i] Lab name {name} is not transformed.")
-    return name
+            return prefix + (lab_name or name), True
+    return name, False
 
 
+# 更长的地址有利于地图应用定位到正确的 POI
 T_LOCATION_RULES_RAW = [
     (r"^(A.+)", "\\1\n哈尔滨工业大学深圳校区A栋 平山一路6号"),
     (r"^(F.+)", "\\1\n哈尔滨工业大学深圳校区F栋\n平山一路"),
@@ -143,17 +157,21 @@ T_LOCATION_RULES_RAW = [
     (r"^(T3.+)", "\\1\n哈尔滨工业大学深圳校区T3栋 平山一路"),
     (r"^(T4.+)", "\\1\n中国广东省深圳市南山区哈尔滨工业大学深圳校区T4栋"),
     (r"^(T5.+)", "\\1\n哈尔滨工业大学深圳校区T5栋 平山一路"),
-    (r"哈工大田径场", "哈尔滨工业大学深圳校区运动场"),
+    (r"^哈工大田径场", "哈尔滨工业大学深圳校区运动场"),
+    #
+    (r"^(无地点)", "\\1"),
 ]
 T_LOCATION_RULES = list(
     map(lambda r: (re.compile(r[0], flags=re.M), r[1]), T_LOCATION_RULES_RAW)
 )
 
 
-def location_detail(text: str) -> str:
+def location_detail(text: str) -> tuple[str, bool]:
     for pattern, repl in T_LOCATION_RULES:
-        res = re.sub(pattern, repl, text)
-        if res != text:
-            return res
-    print(f"[i] Location {text} is not transformed.")
-    return text
+        try:
+            res, n = re.subn(pattern, repl, text)
+            if n:
+                return res, True
+        except:
+            continue
+    return text, False

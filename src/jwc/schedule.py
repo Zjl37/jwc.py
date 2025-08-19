@@ -6,7 +6,12 @@ import ics  # pyright: ignore[reportMissingTypeStubs]
 import zoneinfo
 import datetime
 import re
-from . import preprocess
+from jwc.schedule_preset_trules import (
+    transform_lab_name,
+    transform_lesson_name,
+    location_detail,
+    TransformationResults,
+)
 from jwc.jwapi_model import (
     XsksEntry,
     KbEntry,
@@ -289,15 +294,20 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
             for dt in ([-15, -30] if self.kind == LESSON else [-30, -60, -120])
         ]
 
-    def get_ics_name(self):
+    def get_ics_name(self, transformation_results: TransformationResults):
         match self.kind:
             case ScheduleEntryKind.LAB:
-                return preprocess.transform_lab_name(self.name, self.lab_name) + (
-                    f"［{self.teacher}］" if self.teacher else ""
+                transformed_name, was_transformed = transform_lab_name(
+                    self.name, self.lab_name
                 )
+                if not was_transformed:
+                    transformation_results.untransformed_labs.add(self.name)
+                return transformed_name + (f"［{self.teacher}］" if self.teacher else "")
             case ScheduleEntryKind.LESSON:
-                name = preprocess.transform_lesson_name(self.name)
-                return f"{name}［{self.teacher}］"
+                transformed_name, was_transformed = transform_lesson_name(self.name)
+                if not was_transformed:
+                    transformation_results.untransformed_lessons.add(self.name)
+                return f"{transformed_name}［{self.teacher}］"
             case ScheduleEntryKind.EXAM:
                 return f"【考试】{self.name}"
 
@@ -307,7 +317,10 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
         {self.description}"""
 
     def to_ics_event(
-        self, semester_start_date: datetime.date, categories: list[str]
+        self,
+        semester_start_date: datetime.date,
+        categories: list[str],
+        transformation_results: TransformationResults,
     ) -> Iterable[ics.Event]:
         for t0, t1 in self.time_ranges:
             # ics-py 尚未支持重复日程，故作展开
@@ -320,12 +333,19 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
             for date in dates:
                 d0 = datetime.datetime.combine(date, t0)
                 d1 = datetime.datetime.combine(date, t1)
+
+                transformed_location, location_was_transformed = location_detail(
+                    self.location
+                )
+                if not location_was_transformed:
+                    transformation_results.untransformed_locations.add(self.location)
+
                 event = ics.Event(
-                    name=self.get_ics_name(),
+                    name=self.get_ics_name(transformation_results),
                     begin=d0,
                     end=d1,
                     description=self.get_ics_description(),
-                    location=preprocess.location_detail(self.location),
+                    location=transformed_location,
                     categories=categories,
                     alarms=self.get_ics_alarms(),
                 )
@@ -378,16 +398,19 @@ class Schedule:
                 entries.append(entry)
         return cls(entries, semester_desc, start_date)
 
-    def to_ics(self) -> ics.Calendar:
+    def to_ics(self) -> tuple[ics.Calendar, TransformationResults]:
         cal = ics.Calendar()
+        transformation_results = TransformationResults(set(), set(), set())
+
         for entry in self.entries:
             cal.events.update(
                 entry.to_ics_event(
                     self.start_date,
                     categories=[get_calendar_name(self.semester_desc, entry.kind)],
+                    transformation_results=transformation_results,
                 )
             )
-        return cal
+        return cal, transformation_results
 
     def query_lesson_at(
         self,
