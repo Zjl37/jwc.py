@@ -55,8 +55,13 @@ def add_semester_option(func: FC) -> FC:
 @cli.command()
 # @click.option('-i', '--id', prompt='学号')
 @add_semester_option
-def fetch(semester: str | None):
+@click.option("--force-login", is_flag=True, help="强制重新登录，清除session缓存")
+def fetch(semester: str | None, force_login: bool):
     """更新中间文件的缓存"""
+    if force_login:
+        from .fetch import clear_session_cache
+
+        clear_session_cache()
     xn, xq = parse_semester_arg(semester) if semester else cache.refresh_semester_cache()
     cache.request_xszykbzong(xn, xq)
     _ = cache.request_semester_start_date(xn, xq)
@@ -181,6 +186,44 @@ def phxp_arrange(in_file: str, out_file: str | None, semester: str | None):
             click.secho(" ↳ 原因：" + e.reason, fg="yellow")
 
     print(f"[i] 输出文件已写到 {out_file}")
+
+
+@cli.command()
+def session():
+    """管理登录会话"""
+    from .fetch import get_session_cache_path, clear_session_cache
+    import os
+    import pickle
+    import time
+
+    cache_path = get_session_cache_path()
+
+    if not os.path.exists(cache_path):
+        click.echo("[i] 当前没有缓存的session")
+        return
+
+    try:
+        with open(cache_path, "rb") as f:
+            session_data = pickle.load(f)
+
+        created_at = session_data.get("created_at", 0)
+        age_days = (time.time() - created_at) / (24 * 60 * 60)
+
+        click.echo(f"[i] Session缓存信息：")
+        click.echo(
+            f"    创建时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(created_at))}"
+        )
+        click.echo(f"    年龄: {age_days:.1f} 天")
+        click.echo(f"    路径: {cache_path}")
+
+        # 显示cookie数量信息
+        cookies = session_data.get("cookies", [])
+        click.echo(f"    Cookie数量: {len(cookies)}")
+
+        if click.confirm("[?] 是否清除session缓存？"):
+            clear_session_cache()
+    except Exception as e:
+        click.secho(f"[!] 读取session缓存信息失败: {e}", fg="red")
 
 
 @cli.command()

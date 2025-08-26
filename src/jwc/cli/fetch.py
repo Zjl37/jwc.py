@@ -1,5 +1,6 @@
 import click
 import requests
+import requests.cookies
 import fake_useragent
 from idshit.pwd_login import auth_login, check_need_captcha
 from idshit.qr_login import get_qr_token, get_qr_image, get_status, login
@@ -9,8 +10,92 @@ import io
 from textual_image.renderable import Image as TextImage
 import rich
 from typing import cast
+import os
+import time
+import stat
+import pickle
 
 from jwc.jwapi_common import heartbeat
+
+
+def get_session_cache_path() -> str:
+    """获取session缓存文件路径"""
+    from jwc.cli.cache import jwc_cache_dir
+
+    cache_dir = jwc_cache_dir()
+    return os.path.join(cache_dir, "session.json")
+
+
+def save_session(session: requests.Session) -> None:
+    """将session序列化保存到文件"""
+    cache_path = get_session_cache_path()
+
+    # 使用pickle保存整个session状态
+    session_data = {
+        "cookies": session.cookies,  # 直接保存CookieJar对象
+        "headers": dict(session.headers),
+        "created_at": time.time(),
+    }
+
+    try:
+        with open(cache_path, "wb") as f:
+            pickle.dump(session_data, f)
+
+        # 设置文件权限为仅当前用户可读写
+        os.chmod(cache_path, stat.S_IRUSR | stat.S_IWUSR)
+        click.echo("[i] Session已保存到缓存")
+    except Exception as e:
+        click.secho(f"[!] 保存session缓存失败: {e}", fg="yellow")
+
+
+def load_session() -> requests.Session | None:
+    """从文件加载session，如果文件不存在或无效则返回None"""
+    cache_path = get_session_cache_path()
+
+    if not os.path.exists(cache_path):
+        return None
+
+    try:
+        with open(cache_path, "rb") as f:
+            session_data = pickle.load(f)
+
+        # # 检查session是否过期（7天）
+        # created_at = session_data.get("created_at", 0)
+        # if time.time() - created_at > 7 * 24 * 60 * 60:
+        #     click.secho("[i] Session缓存已过期（7天），将重新登录", fg="yellow")
+        #     clear_session_cache()
+        #     return None
+
+        # 重建session对象
+        session = requests.Session()
+
+        # 恢复cookies（直接使用pickle保存的CookieJar）
+        session.cookies = session_data.get(
+            "cookies", requests.cookies.RequestsCookieJar()
+        )
+
+        # 恢复headers
+        for name, value in session_data.get("headers", {}).items():
+            session.headers[name] = value
+
+        click.echo("[i] 已加载缓存的session")
+        return session
+
+    except Exception as e:
+        click.secho(f"[!] 加载session缓存失败: {e}", fg="yellow")
+        clear_session_cache()
+        return None
+
+
+def clear_session_cache() -> None:
+    """清除session缓存文件"""
+    cache_path = get_session_cache_path()
+    try:
+        if os.path.exists(cache_path):
+            os.remove(cache_path)
+            click.echo("[i] 已清除session缓存")
+    except Exception as e:
+        click.secho(f"[!] 清除session缓存失败: {e}", fg="yellow")
 
 
 def cli_auth_cookie(session: requests.Session):
@@ -115,11 +200,35 @@ def cli_auth_qr(session: requests.Session):
 globalSession: requests.Session | None = None
 
 
+def ask_save_session(session: requests.Session) -> None:
+    """询问用户是否保存session到缓存"""
+    if click.confirm(
+        """[i] 是否储存登录状态以便下次使用？
+    请注意，若选储存，jwc-cache 文件夹中将含有你的敏感账号会话信息。请妥善保管，避免被他人利用。
+    你可以随时通过 `jwc session` 子命令清除会话状态。
+    """,
+        default=True,
+    ):
+        save_session(session)
+
+
 def get_session(force: bool = False) -> requests.Session:
     global globalSession
 
     if not force and globalSession is not None:
         return globalSession
+
+    # 如果不是强制登录，尝试加载缓存的session
+    if not force:
+        cached_session = load_session()
+        if cached_session is not None:
+            # 验证session是否仍然有效
+            if heartbeat(cached_session):
+                globalSession = cached_session
+                return cached_session
+            else:
+                click.secho("[!] 缓存的session已失效，将重新登录", fg="yellow")
+                clear_session_cache()
 
     session = requests.Session()
 
@@ -151,5 +260,7 @@ def get_session(force: bool = False) -> requests.Session:
         click.secho("[!] 登录状态异常！请检查登录依据是否有效。", fg="yellow")
         raise Exception("登录状态异常！请检查登录依据是否有效。")
 
+    # 登录成功后保存session到缓存
+    ask_save_session(session)
     globalSession = session
     return session
