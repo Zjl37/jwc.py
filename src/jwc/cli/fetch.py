@@ -5,7 +5,7 @@ import requests.cookies
 import fake_useragent
 from idshit.pwd_login import auth_login, check_need_captcha
 from idshit.qr_login import get_qr_token, get_qr_image, get_status, login
-from idshit.common import HITIDS_HOST
+from idshit.common import HITIDS_HOST, visit_ids_try_autologin
 from PIL import Image
 import io
 from textual_image.renderable import Image as TextImage
@@ -112,7 +112,25 @@ def cli_auth_cookie(session: requests.Session):
     )
 
 
-def cli_auth_idshit_pwd(session: requests.Session):
+def dump_auth_error(session: requests.Session, res: requests.Response):
+    """将认证错误信息用 pickle 储存到文件以便调试"""
+    from jwc.cli.cache import jwc_cache_dir
+    import pickle
+
+    cache_dir = jwc_cache_dir()
+    dump_info = {
+        "session": session,
+        "response": res,
+        "time": time.time(),
+    }
+    filename = f"auth_error_{time.time()}.pkl"
+    with open(os.path.join(cache_dir, filename), "wb") as f:
+        pickle.dump(dump_info, f)
+
+
+def cli_auth_idshit_pwd(
+    session: requests.Session, form_info: dict[str, str] | None = None
+):
     # 本部统一身份认证平台（密码登录）
     click.echo("=== 正在代为你登录*本部*统一身份认证平台 ===")
 
@@ -132,13 +150,18 @@ def cli_auth_idshit_pwd(session: requests.Session):
     password = cast(str, click.prompt("请输入密码", prompt_suffix="：", hide_input=True))
 
     err, res = auth_login(
-        session, username.strip(), password, service="http://jw.hitsz.edu.cn/casLogin"
+        session,
+        username.strip(),
+        password,
+        service="http://jw.hitsz.edu.cn/casLogin",
+        form_info=form_info,
     )
     if not res.ok:
         print(f"[!] 登录请求失败！（{res.status_code}）")
     if err:
         if err is not True:
             click.echo("[!] 错误提示：" + err)
+        dump_auth_error(session, res)
         raise Exception(err)
 
     if "/authentication/main" not in res.url:
@@ -149,7 +172,7 @@ def cli_auth_idshit_pwd(session: requests.Session):
     return
 
 
-def cli_auth_qr(session: requests.Session):
+def cli_auth_qr(session: requests.Session, form_info: dict[str, str] | None = None):
     # 本部统一身份认证平台（哈工大APP扫码）
     click.echo("=== 正在代为你登录*本部*统一身份认证平台 ===")
 
@@ -181,12 +204,15 @@ def cli_auth_qr(session: requests.Session):
                 )
             raise Exception("二维码已失效")
 
-    err, res = login(session, qr_token, service="http://jw.hitsz.edu.cn/casLogin")
+    err, res = login(
+        session, qr_token, service="http://jw.hitsz.edu.cn/casLogin", form_info=form_info
+    )
     if not res.ok:
         print(f"[!] 登录请求失败！（{res.status_code}）")
     if err:
         if err is not True:
             click.echo("[!] 错误提示：" + err)
+        dump_auth_error(session, res)
         raise Exception(err)
 
     if "/authentication/main" not in res.url:
@@ -217,23 +243,41 @@ def get_session(force: bool = False) -> requests.Session:
     if not force and globalSession is not None:
         return globalSession
 
-    # 如果不是强制登录，尝试加载缓存的session
+    session = globalSession
+    resumed_from_file = False
+    form_info = None
+
     if not force:
-        cached_session = load_session()
-        if cached_session is not None:
+        # 如果不是强制登录，尝试加载缓存的session
+        session = load_session()
+        if session is not None:
+            resumed_from_file = True
+
             # 验证session是否仍然有效
-            if heartbeat(cached_session):
-                globalSession = cached_session
-                return cached_session
-            else:
-                click.secho("[!] 缓存的session已失效，将重新登录", fg="yellow")
-                # clear_session_cache()
+            if heartbeat(session):
+                globalSession = session
+                return session
 
-    session = requests.Session()
+            autologgedin, _other = visit_ids_try_autologin(
+                session, service="http://jw.hitsz.edu.cn/casLogin"
+            )
+            if autologgedin:
+                click.secho("[i] 统一身份认证：7天免登录成功", fg="green")
+                if not heartbeat(session):
+                    click.secho("[!] 登录状态异常！请检查登录凭据是否有效。", fg="yellow")
+                    raise Exception("登录状态异常！请检查登录凭据是否有效。")
+                globalSession = session
+                save_session(session)
+                return session
+            form_info = cast(dict[str, str], _other)
+            click.secho("[!] 缓存的session已失效，将重新登录", fg="yellow")
+            # clear_session_cache()
 
-    session.headers.update(
-        {"User-Agent": fake_useragent.UserAgent(platforms="desktop").random}
-    )
+    if session is None:
+        session = requests.Session()
+        session.headers.update(
+            {"User-Agent": fake_useragent.UserAgent(platforms="desktop").random}
+        )
 
     auth_choice: str = click.prompt(  # pyright: ignore[reportAny]
         """认证方式？
@@ -251,15 +295,15 @@ def get_session(force: bool = False) -> requests.Session:
     if auth_choice.strip().startswith("3"):
         cli_auth_cookie(session)
     elif auth_choice.strip().startswith("2"):
-        cli_auth_idshit_pwd(session)
+        cli_auth_idshit_pwd(session, form_info=form_info)
     else:
-        cli_auth_qr(session)
+        cli_auth_qr(session, form_info=form_info)
 
     if not heartbeat(session):
-        click.secho("[!] 登录状态异常！请检查登录依据是否有效。", fg="yellow")
-        raise Exception("登录状态异常！请检查登录依据是否有效。")
+        click.secho("[!] 登录状态异常！请检查登录凭据是否有效。", fg="yellow")
+        raise Exception("登录状态异常！请检查登录凭据是否有效。")
 
     # 登录成功后保存session到缓存
-    ask_save_session(session)
+    (save_session if resumed_from_file else ask_save_session)(session)
     globalSession = session
     return session

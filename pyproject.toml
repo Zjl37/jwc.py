@@ -1,6 +1,6 @@
 [project]
 name = "jwc"
-version = "0.3.3"
+version = "0.3.4"
 description = "将某校教务平台的课表转为 ICS 日历"
 authors = [
     {name = "Zjl37", email = "2693911885@qq.com"},

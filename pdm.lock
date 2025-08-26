@@ -293,10 +293,10 @@ files = [
 
 [[package]]
 name = "idshit"
-version = "0.1.0"
+version = "0.1.1"
 requires_python = ">=3.11"
 git = "https://github.com/Zjl37/idshit.py.git"
-revision = "60db8637261a8d097b898662440afd741f3830a1"
+revision = "969f1cbb42762fe8af2bb571ddd4f1ca25b15895"
 summary = "与某校的统一身份认证平台交互"
 groups = ["cli"]
 dependencies = [
