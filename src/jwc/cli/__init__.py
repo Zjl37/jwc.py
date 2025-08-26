@@ -5,9 +5,15 @@ import datetime
 
 from click.decorators import FC
 
+from jwc.cli.fetch import SessionCache
 from jwc.schedule_preset_trules import TransformationResults
 from . import cache
-from ..schedule import Schedule, get_calendar_name, get_semester_desc_brief
+from ..schedule import (
+    Schedule,
+    get_calendar_name,
+    get_semester_desc_brief,
+    get_semester_description,
+)
 from ..jwapi_model import ErrorEntry
 import jwc.phxp
 from . import phxp_cache
@@ -52,6 +58,11 @@ def add_semester_option(func: FC) -> FC:
     return click.option("-s", "semester", help="指定学期，格式如 24秋/25s/2025夏")(func)
 
 
+def report_semester(xn: str, xq: str):
+    click.secho(f"[i] 当前学期：{get_semester_description(xn, xq)}", fg="cyan")
+    click.echo("[i] 若要使用不同的学期，请更改命令行参数。")
+
+
 @cli.command()
 # @click.option('-i', '--id', prompt='学号')
 @add_semester_option
@@ -63,9 +74,10 @@ def fetch(semester: str | None, force_login: bool):
 
         clear_session_cache()
     xn, xq = parse_semester_arg(semester) if semester else cache.refresh_semester_cache()
+    report_semester(xn, xq)
     cache.request_xszykbzong(xn, xq)
     _ = cache.request_semester_start_date(xn, xq)
-    click.echo("[i] 缓存已更新")
+    click.secho("[i] 缓存已更新", fg="green")
 
 
 def report_error_entries(error_entries: list[ErrorEntry], kind: str = "课表"):
@@ -108,6 +120,7 @@ def _report_transformation_results(tr: TransformationResults):
 def to_ics(semester: str | None, out_file: str):
     """【教务课表导出】由课程表生成 ics 日历文件"""
     xn, xq = parse_semester_arg(semester) if semester else cache.current_semester()
+    report_semester(xn, xq)
     data = cache.xszykbzong(xn, xq)
     error_entries: list[ErrorEntry] = []
     # 动态获取学期开始日期
@@ -134,6 +147,7 @@ def to_ics(semester: str | None, out_file: str):
 def exam_to_ics(semester: str | None, out_file: str) -> None:
     """【教务考试导出】由考试安排生成 ics 日历文件"""
     xn, xq = parse_semester_arg(semester) if semester else cache.current_semester()
+    report_semester(xn, xq)
     data = cache.XsksByxhList()
     start_date = cache.semester_start_date(xn, xq)
     semester_desc = get_semester_desc_brief(xn, xq)
@@ -165,6 +179,7 @@ def phxp_arrange(in_file: str, out_file: str | None, semester: str | None):
     IN_FILE 应为教师发布的大物实验排课表 Excel 文件。
     """
     xn, xq = parse_semester_arg(semester) if semester else cache.current_semester()
+    report_semester(xn, xq)
     data = cache.xszykbzong(xn, xq)
     start_date = cache.semester_start_date(xn, xq)
     semester_desc = get_semester_desc_brief(xn, xq)
@@ -204,9 +219,9 @@ def session():
 
     try:
         with open(cache_path, "rb") as f:
-            session_data = pickle.load(f)
+            session_data: SessionCache = pickle.load(f)
 
-        created_at = session_data.get("created_at", 0)
+        created_at = session_data.created_at
         age_days = (time.time() - created_at) / (24 * 60 * 60)
 
         click.echo(f"[i] Session缓存信息：")
@@ -217,7 +232,7 @@ def session():
         click.echo(f"    路径: {cache_path}")
 
         # 显示cookie数量信息
-        cookies = session_data.get("cookies", [])
+        cookies = session_data.cookies
         click.echo(f"    Cookie数量: {len(cookies)}")
 
         if click.confirm("[?] 是否清除session缓存？"):
@@ -233,6 +248,7 @@ def phxp_to_ics(out_file: str, semester: str | None):
     """【大物实验课表导出】从物理实验选课平台生成 ics 日历"""
 
     xn, xq = parse_semester_arg(semester) if semester else cache.current_semester()
+    report_semester(xn, xq)
     start_date = cache.semester_start_date(xn, xq)
     semester_desc = get_semester_desc_brief(xn, xq)
 

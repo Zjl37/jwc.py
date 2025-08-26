@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import click
 import requests
 import requests.cookies
@@ -18,12 +19,19 @@ import pickle
 from jwc.jwapi_common import heartbeat
 
 
+@dataclass
+class SessionCache:
+    cookies: requests.cookies.RequestsCookieJar
+    headers: dict[str, str | bytes]
+    created_at: float
+
+
 def get_session_cache_path() -> str:
     """获取session缓存文件路径"""
     from jwc.cli.cache import jwc_cache_dir
 
     cache_dir = jwc_cache_dir()
-    return os.path.join(cache_dir, "session.json")
+    return os.path.join(cache_dir, "session-v1.json")
 
 
 def save_session(session: requests.Session) -> None:
@@ -31,11 +39,11 @@ def save_session(session: requests.Session) -> None:
     cache_path = get_session_cache_path()
 
     # 使用pickle保存整个session状态
-    session_data = {
-        "cookies": session.cookies,  # 直接保存CookieJar对象
-        "headers": dict(session.headers),
-        "created_at": time.time(),
-    }
+    session_data = SessionCache(
+        cookies=session.cookies,  # 直接保存CookieJar对象
+        headers=dict(session.headers),
+        created_at=time.time(),
+    )
 
     try:
         with open(cache_path, "wb") as f:
@@ -57,25 +65,16 @@ def load_session() -> requests.Session | None:
 
     try:
         with open(cache_path, "rb") as f:
-            session_data = pickle.load(f)
-
-        # # 检查session是否过期（7天）
-        # created_at = session_data.get("created_at", 0)
-        # if time.time() - created_at > 7 * 24 * 60 * 60:
-        #     click.secho("[i] Session缓存已过期（7天），将重新登录", fg="yellow")
-        #     clear_session_cache()
-        #     return None
+            session_data: SessionCache = pickle.load(f)
 
         # 重建session对象
         session = requests.Session()
 
         # 恢复cookies（直接使用pickle保存的CookieJar）
-        session.cookies = session_data.get(
-            "cookies", requests.cookies.RequestsCookieJar()
-        )
+        session.cookies = session_data.cookies
 
         # 恢复headers
-        for name, value in session_data.get("headers", {}).items():
+        for name, value in session_data.headers.items():
             session.headers[name] = value
 
         click.echo("[i] 已加载缓存的session")
@@ -83,7 +82,7 @@ def load_session() -> requests.Session | None:
 
     except Exception as e:
         click.secho(f"[!] 加载session缓存失败: {e}", fg="yellow")
-        clear_session_cache()
+        # clear_session_cache()
         return None
 
 
@@ -228,7 +227,7 @@ def get_session(force: bool = False) -> requests.Session:
                 return cached_session
             else:
                 click.secho("[!] 缓存的session已失效，将重新登录", fg="yellow")
-                clear_session_cache()
+                # clear_session_cache()
 
     session = requests.Session()
 
