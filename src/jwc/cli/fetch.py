@@ -10,6 +10,8 @@ from textual_image.renderable import Image as TextImage
 import rich
 from typing import cast
 
+from jwc.jwapi_common import heartbeat
+
 
 def cli_auth_cookie(session: requests.Session):
     # Cookie
@@ -144,6 +146,10 @@ def get_session(force: bool = False) -> requests.Session:
         cli_auth_idshit_pwd(session)
     else:
         cli_auth_qr(session)
+
+    if not heartbeat(session):
+        click.secho("[!] 登录状态异常！请检查登录依据是否有效。", fg="yellow")
+        raise Exception("登录状态异常！请检查登录依据是否有效。")
 
     globalSession = session
     return session
