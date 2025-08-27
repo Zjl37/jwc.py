@@ -64,7 +64,6 @@ def report_semester(xn: str, xq: str):
 
 
 @cli.command()
-# @click.option('-i', '--id', prompt='学号')
 @add_semester_option
 @click.option("--force-login", is_flag=True, help="强制重新登录，清除session缓存")
 def fetch(semester: str | None, force_login: bool):
@@ -77,6 +76,7 @@ def fetch(semester: str | None, force_login: bool):
     report_semester(xn, xq)
     cache.request_xszykbzong(xn, xq)
     _ = cache.request_semester_start_date(xn, xq)
+    cache.request_XsksByxhList(xn, xq)
     click.secho("[i] 缓存已更新", fg="green")
 
 
@@ -148,7 +148,7 @@ def exam_to_ics(semester: str | None, out_file: str) -> None:
     """【教务考试导出】由考试安排生成 ics 日历文件"""
     xn, xq = parse_semester_arg(semester) if semester else cache.current_semester()
     report_semester(xn, xq)
-    data = cache.XsksByxhList()
+    data = cache.XsksByxhList(xn, xq)
     start_date = cache.semester_start_date(xn, xq)
     semester_desc = get_semester_desc_brief(xn, xq)
     error_entries: list[ErrorEntry] = []

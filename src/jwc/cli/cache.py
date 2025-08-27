@@ -179,13 +179,13 @@ def semester_start_date(xn: str, xq: str) -> datetime.date:
         return datetime.date(2025, 2, 24)
 
 
-def request_XsksByxhList():
+def request_XsksByxhList(xn: str, xq: str):
     session = get_session()
     q = {
         "ppylx": "",
         "pkkyx": "",
-        "pxn": "2024-2025",
-        "pxq": "2",
+        "pxn": xn,
+        "pxq": xq,
     }
 
     resp = request_XsksByxhList_page(session, q, 1)
@@ -198,7 +198,9 @@ def request_XsksByxhList():
     print(f"[i] 已更新 XsksByxhList")
     # Create XsksResponse from validated entries
     all_entries = XsksList(l)
-    with open(f"{jwc_cache_dir()}/response-queryXsksByxhList.json", "w") as file:
+    with open(
+        f"{semester_cache_dir(xn, xq)}/response-queryXsksByxhList.json", "w"
+    ) as file:
         _ = file.write(all_entries.model_dump_json())
     return all_entries
 
@@ -230,13 +232,13 @@ def request_XsksByxhList_page(
         raise ValueError("由于以上错误，无法继续。请向开发者反馈此问题。")
 
 
-def XsksByxhList(path: str = "", text: str = "") -> XsksList:
+def XsksByxhList(xn: str, xq: str, path: str = "", text: str = "") -> XsksList:
     """返回缓存的 queryXsksByxhList 数据，如未找到则向服务器请求"""
     if text != "":
         return XsksList.model_validate_json(text)
 
     if path == "":
-        path = f"{jwc_cache_dir()}/response-queryXsksByxhList.json"
+        path = f"{semester_cache_dir(xn, xq)}/response-queryXsksByxhList.json"
 
     def should_fetch():
         if not os.path.isfile(path):
@@ -256,7 +258,7 @@ def XsksByxhList(path: str = "", text: str = "") -> XsksList:
             return not cast(str, ans).lower().startswith("n")
 
     if should_fetch():
-        return request_XsksByxhList()
+        return request_XsksByxhList(xn, xq)
 
     with open(path) as f:
         return XsksList.model_validate_json(f.read())
