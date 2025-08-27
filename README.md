@@ -29,8 +29,8 @@
     ## 如果是类 Unix 系统，则执行
     source venv/bin/activate
 
-    # 安装 jwc 及其依赖，请替换成该 .whl 文件的实际路径
-    pip install -i https://mirrors.osa.moe/pypi/web/simple /path/to/jwc-0.2.0-py3-none-any.whl
+    # 安装 jwc，请将[cli]前面替换成该 .whl 文件的实际路径
+    pip install -i https://mirrors.osa.moe/pypi/web/simple "/path/to/jwc-0.2.0-py3-none-any.whl[cli]"
 
     # 走你
     python -m jwc.cli
