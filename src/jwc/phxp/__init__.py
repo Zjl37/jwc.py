@@ -5,7 +5,8 @@ from openpyxl import load_workbook
 import datetime
 
 import openpyxl.utils
-from ..schedule import LAB, Schedule, ScheduleEntry
+from ..schedule import Schedule, ScheduleEntry
+from ..schedule_utils import LAB
 from ..jwapi_model import ErrorEntry
 from .api_model import PhxpLabCourse, PhxpResponse
 

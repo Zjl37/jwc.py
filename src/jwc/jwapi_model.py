@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, RootModel
 
 
@@ -11,7 +12,7 @@ class CurrentSemester(BaseModel):
 class KbEntry(BaseModel):
     KCWZSM: None | str
     RWH: None | str
-    SKFS: None | str
+    SKFS: Optional[str] = None
     SFFXEXW: None | str
     FILEURL: str | None = None
     SKSJ: str
