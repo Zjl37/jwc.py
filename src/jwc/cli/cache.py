@@ -7,10 +7,12 @@ import os
 from pydantic import ValidationError
 import requests
 
+from jwc.jwapi_common import JwcValueError
+from jwc.jwapi_schedule import jwapi_get_semester_start_date
+
 from .fetch import get_session
 from ..jwapi_model import (
     CurrentSemester,
-    RlZcSjResponse,
     XsksByxhListResponse,
     XsksList,
     XszykbzongResponse,
@@ -126,25 +128,15 @@ def xszykbzong(xn: str, xq: str, path: str = "", text: str = "") -> XszykbzongRe
 
 def request_semester_start_date(xn: str, xq: str):
     session = get_session()
-    response = session.post(
-        url="http://jw.hitsz.edu.cn/component/queryRlZcSj",
-        data={"xn": xn, "xq": xq, "djz": "1"},
-        verify=False,
-    )
+    d0 = jwapi_get_semester_start_date(session, xn, xq)
 
-    if response.ok:
-        data = RlZcSjResponse.model_validate(response.json())
-        # 找到星期一（xqj=1）的日期
-        for entry in data.content:
-            if entry.xqj == "1":
-                start_date = datetime.datetime.strptime(entry.rq, "%Y-%m-%d").date()
-                cache_file = f"{semester_cache_dir(xn, xq)}/semester_start_date.txt"
-                with open(cache_file, "w") as f:
-                    _ = f.write(start_date.isoformat())
-                return start_date
-        raise ValueError("未找到第一周星期一的日期")
-    else:
-        raise ConnectionError(f"获取学期开始日期失败: {response.status_code}")
+    if d0 is None:
+        raise JwcValueError("未找到第一周星期一的日期")
+
+    cache_file = f"{semester_cache_dir(xn, xq)}/semester_start_date.txt"
+    with open(cache_file, "w") as f:
+        _ = f.write(d0.isoformat())
+    return d0
 
 
 def semester_start_date(xn: str, xq: str) -> datetime.date:

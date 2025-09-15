@@ -16,7 +16,7 @@ def arrange(
     out_file: str,
     schedule: Schedule,
     error_entries: list[ErrorEntry] | None = None,
-):
+) -> None:
     # Load workbook and worksheet
     wb = load_workbook(in_file)
     ws = wb.active

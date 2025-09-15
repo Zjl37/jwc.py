@@ -94,7 +94,7 @@ def report_error_entries(error_entries: list[ErrorEntry], kind: str = "课表"):
 def _report_transformation_results(tr: TransformationResults):
     if tr.untransformed_lessons or tr.untransformed_labs:
         click.secho(
-            f"[i] 有以下若干个课程名称没有加 emoji / 没有匹配的预置重命名规则：",
+            f"[i] 以下若干个课程名称没有加 emoji / 没有匹配的预置重命名规则：",
             fg="cyan",
         )
 
@@ -109,7 +109,7 @@ def _report_transformation_results(tr: TransformationResults):
                 click.secho(f"    • {name}", fg="yellow")
 
     if tr.untransformed_locations:
-        click.secho(f"[i] 有以下若干个地点没有匹配预置重命名规则：", fg="cyan")
+        click.secho(f"[i] 以下若干个地点没有匹配预置重命名规则：", fg="cyan")
         for name in tr.untransformed_locations:
             click.secho(f"    • {name}", fg="yellow")
 

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Self, Optional
 from typing_extensions import Hashable
 import ics  # pyright: ignore[reportMissingTypeStubs]
 import datetime
@@ -20,13 +21,13 @@ from jwc.schedule_utils import (
 )
 
 
-def get_semester_desc_brief(xn: str, xq: str):
+def get_semester_desc_brief(xn: str, xq: str) -> str:
     year = xn.split("-")[0 if xq == "1" else 1]
     season = {"1": "秋", "2": "春", "3": "夏"}[xq]
     return f"{year[-2:]}{season}"
 
 
-def get_semester_description(xn: str, xq: str):
+def get_semester_description(xn: str, xq: str) -> str:
     year = xn.split("-")[0 if xq == "1" else 1]
     season = {"1": "秋", "2": "春", "3": "夏"}[xq]
     return f"{year}年{season}季学期"
@@ -38,7 +39,7 @@ def get_calendar_name(semester_desc: str, kind: ScheduleEntryKind = LESSON):
 
 
 def time_range_smart_merge(entries: list[ScheduleEntry]):
-    print(f"[debug] time_range_smart_merge: {len(entries)} entries before merging")
+    # print(f"[debug] time_range_smart_merge: {len(entries)} entries before merging")
 
     def make_identifying_key(e: ScheduleEntry):
         # 将以下这些字段全同的条目视为可合并的同一课程
@@ -137,7 +138,7 @@ class Schedule:
         semester_desc: str,
         start_date: datetime.date,
         error_entries: list[ErrorEntry] | None = None,
-    ):
+    ) -> Self:
         entries: list[ScheduleEntry] = []
         for item in obj.root:
             if item.KEY == "bz":

@@ -10,14 +10,23 @@ class CurrentSemester(BaseModel):
 
 
 class KbEntry(BaseModel):
+    # 课程文字说明
     KCWZSM: None | str
+    # 任务号
     RWH: None | str
-    SKFS: Optional[str] = None
+    # 上课方式
+    SKFS: Optional[str] = None  # 此字段于 2025-8/9 月份间见新加
+    # 是否？？二学位（？）
     SFFXEXW: None | str
+    # 附件网址
     FILEURL: str | None = None
+    # 上课时间
     SKSJ: str
+    # （？）
     XB: int
+    # 上课时间（英文）
     SKSJ_EN: None | str = None
+    # 单元格标识
     KEY: str
 
 
