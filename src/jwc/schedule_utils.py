@@ -7,15 +7,53 @@ import re
 import ics  # pyright: ignore[reportMissingTypeStubs]
 from ics.alarm.display import timedelta  # pyright: ignore[reportMissingTypeStubs]
 
-from jwc.schedule_preset_trules import (
-    transform_lab_name,
-    transform_lesson_name,
-    location_detail,
-    TransformationResults,
-)
+from jwc.schedule_preset_trules import TransformationResults
+from jwc.schedule_preference import JwcSchedulePreference
 from jwc.jwapi_model import XsksEntry, KbEntry
 from typing import cast, Self, Literal
 import zoneinfo
+
+
+def transform_lesson_name_with_preference(
+    name: str, preference: JwcSchedulePreference
+) -> tuple[str, bool]:
+    """取课程课程显示名称（添加emoji前缀）"""
+    for pattern, emoji in preference.lesson_emoji_rules:
+        if re.search(re.compile(pattern, flags=re.M), name):
+            return emoji + name, True
+
+    return name, False
+
+
+def transform_lab_name_with_preference(
+    name: str, lab_name: str, preference: JwcSchedulePreference
+) -> tuple[str, bool]:
+    """取实验显示名称（添加emoji前缀）"""
+    for pattern, emoji in preference.lab_emoji_rules:
+        if re.search(re.compile(pattern, flags=re.M), name):
+            return emoji + (lab_name or name), True
+
+    return name, False
+
+
+def location_detail_with_preference(
+    location: str, preference: JwcSchedulePreference
+) -> tuple[str, bool]:
+    """取地点显示名称详情"""
+    if not preference.enable_location_transformation:
+        return location, False
+
+    # 先应用用户规则
+    for pattern, replacement in preference.location_trules:
+        try:
+            compiled_pattern = re.compile(pattern, flags=re.M)
+            res, n = re.subn(compiled_pattern, replacement, location)
+            if n:
+                return res, True
+        except:
+            continue
+
+    return location, False
 
 
 ScheduleEntryKind = Enum("ScheduleEntryKind", ["LESSON", "EXAM", "LAB"])
@@ -277,32 +315,49 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
             EXAM,
         )
 
-    def get_ics_alarms(self) -> list[ics.DisplayAlarm]:
-        if self.kind == LAB:
-            return [
-                ics.DisplayAlarm(datetime.timedelta(days=-2)),
-                ics.DisplayAlarm(datetime.timedelta(minutes=-30)),
-                ics.DisplayAlarm(datetime.timedelta(minutes=-15)),
-            ]
-        return [
-            ics.DisplayAlarm(datetime.timedelta(minutes=dt))
-            for dt in ([-15, -30] if self.kind == LESSON else [-30, -60, -120])
-        ]
+    def get_ics_alarms(self, preference: JwcSchedulePreference) -> list[ics.DisplayAlarm]:
+        """根据用户偏好生成提醒设置"""
+        reminders = []
 
-    def get_ics_name(self, transformation_results: TransformationResults):
+        if self.kind == LESSON:
+            reminders = preference.lesson_reminders
+        elif self.kind == LAB:
+            reminders = preference.lab_reminders
+        elif self.kind == EXAM:
+            reminders = preference.exam_reminders
+
+        return [ics.DisplayAlarm(reminder) for reminder in reminders]
+
+    def get_ics_name(
+        self,
+        transformation_results: TransformationResults,
+        preference: JwcSchedulePreference,
+    ):
+        str_teacher = f"［{self.teacher}］" if self.teacher else ""
+        if not preference.enable_emoji_prefix:
+            match self.kind:
+                case ScheduleEntryKind.LAB:
+                    return (self.lab_name or self.name) + str_teacher
+                case ScheduleEntryKind.LESSON:
+                    return f"{self.name}{str_teacher}"
+                case ScheduleEntryKind.EXAM:
+                    return f"【考试】{self.name}"
+
         match self.kind:
             case ScheduleEntryKind.LAB:
-                transformed_name, was_transformed = transform_lab_name(
-                    self.name, self.lab_name
+                transformed_name, was_transformed = transform_lab_name_with_preference(
+                    self.name, self.lab_name, preference
                 )
                 if not was_transformed:
                     transformation_results.untransformed_labs.add(self.name)
-                return transformed_name + (f"［{self.teacher}］" if self.teacher else "")
+                return transformed_name + str_teacher
             case ScheduleEntryKind.LESSON:
-                transformed_name, was_transformed = transform_lesson_name(self.name)
+                transformed_name, was_transformed = transform_lesson_name_with_preference(
+                    self.name, preference
+                )
                 if not was_transformed:
                     transformation_results.untransformed_lessons.add(self.name)
-                return f"{transformed_name}［{self.teacher}］"
+                return f"{transformed_name}{str_teacher}"
             case ScheduleEntryKind.EXAM:
                 return f"【考试】{self.name}"
 
@@ -316,6 +371,7 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
         semester_start_date: datetime.date,
         categories: list[str],
         transformation_results: TransformationResults,
+        preference: JwcSchedulePreference,
     ) -> Iterable[ics.Event]:
         combine = datetime.datetime.combine
         match self.dates:
@@ -331,7 +387,7 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
             zone = zoneinfo.ZoneInfo("UTC")
             for date in dates:
                 event = ics.Event(
-                    name=self.get_ics_name(transformation_results),
+                    name=self.get_ics_name(transformation_results, preference),
                     begin=combine(date, t0, zone),
                     description=self.get_ics_description(),
                     location=self.location,
@@ -353,20 +409,20 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
                 d0 = combine(date, t0)
                 d1 = combine(date, t1)
 
-                transformed_location, location_was_transformed = location_detail(
-                    self.location
+                transformed_location, location_was_transformed = (
+                    location_detail_with_preference(self.location, preference)
                 )
                 if not location_was_transformed:
                     transformation_results.untransformed_locations.add(self.location)
 
                 event = ics.Event(
-                    name=self.get_ics_name(transformation_results),
+                    name=self.get_ics_name(transformation_results, preference),
                     begin=d0,
                     end=d1,
                     description=self.get_ics_description(),
                     location=transformed_location,
                     categories=categories,
-                    alarms=self.get_ics_alarms(),
+                    alarms=self.get_ics_alarms(preference),
                 )
                 yield event
 

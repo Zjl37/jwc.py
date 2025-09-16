@@ -2,6 +2,7 @@ import os
 import re
 import click
 import datetime
+from pydantic_yaml import to_yaml_file, parse_yaml_file_as  # pyright: ignore[reportUnknownVariableType]
 
 from click.decorators import FC
 
@@ -17,6 +18,55 @@ from ..schedule import (
 from ..jwapi_model import ErrorEntry
 import jwc.phxp
 from . import phxp_cache
+from ..schedule_preference import JwcSchedulePreference
+from ..schedule_preset_trules import (
+    T_LAB_RULES_RAW,
+    T_LESSON_RULES_RAW,
+    T_LOCATION_RULES_RAW,
+)
+
+
+def load_schedule_preferences(preference_file: str | None) -> JwcSchedulePreference:
+    if not preference_file:
+        preference_file = cache.jwc_cache_dir() + "/schedule-preference.yaml"
+        if not os.path.exists(preference_file):
+            return JwcSchedulePreference()
+
+    return parse_yaml_file_as(JwcSchedulePreference, preference_file)
+
+
+def load_schedule_preferences_with_preset(
+    preference_file: str | None, no_preset_rules: bool
+) -> JwcSchedulePreference:
+    preference = load_schedule_preferences(preference_file)
+
+    if not no_preset_rules:
+        preference.merge_with_preset_rules(
+            T_LESSON_RULES_RAW, T_LAB_RULES_RAW, T_LOCATION_RULES_RAW
+        )
+
+    return preference
+
+
+def schedule_preference_summary(preference: JwcSchedulePreference):
+    # 显示偏好设置摘要
+    if not preference.enable_emoji_prefix:
+        click.echo("[i] 日历设置：已关闭 emoji 前缀")
+    else:
+        # 报告规则数量，如果有
+        if preference.lesson_emoji_rules:
+            click.echo(
+                f"[i] 日历设置：使用 {len(preference.lesson_emoji_rules)} 条课程名称 emoji 规则"
+            )
+        if preference.lab_emoji_rules:
+            click.echo(
+                f"[i] 日历设置：使用 {len(preference.lab_emoji_rules)} 条实验名称 emoji 规则"
+            )
+
+    if not preference.enable_location_transformation:
+        click.echo("[i] 日历设置：已关闭地点名称改写")
+    elif preference.location_trules:
+        click.echo(f"[i] 日历设置：使用 {len(preference.location_trules)} 条地点名称规则")
 
 
 def parse_semester_arg(s: str) -> tuple[str, str]:
@@ -56,6 +106,14 @@ def cli():
 
 def add_semester_option(func: FC) -> FC:
     return click.option("-s", "semester", help="指定学期，格式如 24秋/25s/2025夏")(func)
+
+
+def add_schedule_preference_options(f: FC) -> FC:
+    # fmt: off
+    f = click.option("--preference-file", "-p", default=None, help="指定偏好设置文件路径")(f)
+    f = click.option("--no-preset-rules", is_flag=True, help="不使用预置转换规则")(f)
+    # fmt: on
+    return f
 
 
 def report_semester(xn: str, xq: str):
@@ -117,7 +175,13 @@ def _report_transformation_results(tr: TransformationResults):
 @cli.command()
 @add_semester_option
 @click.option("-o", "out_file", default=None, help="输出文件名")
-def to_ics(semester: str | None, out_file: str):
+@add_schedule_preference_options
+def to_ics(
+    semester: str | None,
+    out_file: str,
+    preference_file: str | None,
+    no_preset_rules: bool,
+):
     """【教务课表导出】由课程表生成 ics 日历文件"""
     xn, xq = parse_semester_arg(semester) if semester else cache.current_semester()
     report_semester(xn, xq)
@@ -130,7 +194,10 @@ def to_ics(semester: str | None, out_file: str):
     )
     report_error_entries(error_entries)
 
-    calendar, transformation_results = schedule.to_ics()
+    # 加载用户偏好设置
+    preference = load_schedule_preferences_with_preset(preference_file, no_preset_rules)
+
+    calendar, transformation_results = schedule.to_ics(preference)
     calendar_name = get_calendar_name(get_semester_desc_brief(xn, xq))
     ics_filename = out_file or f"{cache.jwc_cache_dir()}/out/{calendar_name}.ics"
     os.makedirs(os.path.dirname(ics_filename), exist_ok=True)
@@ -144,7 +211,13 @@ def to_ics(semester: str | None, out_file: str):
 @cli.command()
 @add_semester_option
 @click.option("-o", "out_file", default=None, help="输出文件名")
-def exam_to_ics(semester: str | None, out_file: str) -> None:
+@add_schedule_preference_options
+def exam_to_ics(
+    semester: str | None,
+    out_file: str,
+    preference_file: str | None,
+    no_preset_rules: bool,
+) -> None:
     """【教务考试导出】由考试安排生成 ics 日历文件"""
     xn, xq = parse_semester_arg(semester) if semester else cache.current_semester()
     report_semester(xn, xq)
@@ -155,7 +228,10 @@ def exam_to_ics(semester: str | None, out_file: str) -> None:
     schedule = Schedule.from_xsks(data, semester_desc, start_date, error_entries)
     report_error_entries(error_entries, kind="考试")
 
-    calendar, transformation_results = schedule.to_ics()
+    # 加载用户偏好设置
+    preference = load_schedule_preferences_with_preset(preference_file, no_preset_rules)
+
+    calendar, transformation_results = schedule.to_ics(preference)
     from ..schedule import EXAM
 
     calendar_name = get_calendar_name(get_semester_desc_brief(xn, xq), EXAM)
@@ -244,7 +320,13 @@ def session():
 @cli.command()
 @add_semester_option
 @click.option("-o", "out_file", default=None, help="输出文件名")
-def phxp_to_ics(out_file: str, semester: str | None):
+@add_schedule_preference_options
+def phxp_to_ics(
+    out_file: str,
+    semester: str | None,
+    preference_file: str | None,
+    no_preset_rules: bool,
+):
     """【大物实验课表导出】从物理实验选课平台生成 ics 日历"""
 
     xn, xq = parse_semester_arg(semester) if semester else cache.current_semester()
@@ -254,7 +336,11 @@ def phxp_to_ics(out_file: str, semester: str | None):
 
     obj = phxp_cache.LoadUsedLabCourses()
     schedule = jwc.phxp.create_schedule_from(obj, semester_desc, start_date)
-    calendar, transformation_results = schedule.to_ics()
+
+    # 加载用户偏好设置
+    preference = load_schedule_preferences_with_preset(preference_file, no_preset_rules)
+
+    calendar, transformation_results = schedule.to_ics(preference)
     course_name = obj.rows[0].CourseName
     ics_filename = (
         out_file
@@ -266,6 +352,28 @@ def phxp_to_ics(out_file: str, semester: str | None):
         print(f"[i] 日历已写入 {ics_filename} 文件。")
 
     _report_transformation_results(transformation_results)
+
+
+@cli.command()
+@click.option(
+    "--output", "-o", default=None, help="输出偏好文件路径，不指定则使用默认路径"
+)
+def init_schedule_preferences(output: str | None):
+    """【生成日历设置模版】"""
+    preference = JwcSchedulePreference()
+    preference.merge_with_preset_rules(
+        T_LESSON_RULES_RAW[:3], T_LAB_RULES_RAW[:3], T_LOCATION_RULES_RAW[:3]
+    )
+
+    preference_file = output or (cache.jwc_cache_dir() + "/schedule-preference.yaml")
+
+    to_yaml_file(preference_file, preference)
+
+    click.echo(f"[i] 已生成示例日历偏好设置文件：{output}")
+    click.echo("[i] 你可以编辑此文件来自定义提醒时间、emoji规则和地点转换规则")
+    click.echo("[i] 使用示例：")
+    click.echo("    jwc to-ics -p my-preferences.yaml")
+    click.echo("    jwc to-ics --no-preset-rules")
 
 
 if __name__ == "__main__":

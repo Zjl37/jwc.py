@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass
-from typing import NamedTuple
+from warnings import deprecated
 
 
 @dataclass
@@ -116,6 +116,7 @@ T_LESSON_RULES = list(
 )
 
 
+@deprecated("Use transform_lesson_name_with_preference instead")
 def transform_lesson_name(name: str) -> tuple[str, bool]:
     for pattern, prefix in T_LESSON_RULES:
         if re.search(pattern, name):
@@ -143,6 +144,7 @@ T_LAB_RULES_RAW = [
 T_LAB_RULES = list(map(lambda r: (re.compile(r[0], flags=re.M), r[1]), T_LAB_RULES_RAW))
 
 
+@deprecated("Use transform_lab_name_with_preference instead")
 def transform_lab_name(name: str, lab_name: str) -> tuple[str, bool]:
     for pattern, prefix in T_LAB_RULES:
         if re.search(pattern, name):
@@ -171,6 +173,7 @@ T_LOCATION_RULES = list(
 )
 
 
+@deprecated("Use location_detail_with_preference instead")
 def location_detail(text: str) -> tuple[str, bool]:
     for pattern, repl in T_LOCATION_RULES:
         try:

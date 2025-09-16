@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Self, Optional
+from typing import Self
 from typing_extensions import Hashable
 import ics  # pyright: ignore[reportMissingTypeStubs]
 import datetime
@@ -19,6 +19,7 @@ from jwc.schedule_utils import (
     ScheduledDates,
     time_slot_mapping,
 )
+from jwc.schedule_preference import JwcSchedulePreference
 
 
 def get_semester_desc_brief(xn: str, xq: str) -> str:
@@ -164,7 +165,9 @@ class Schedule:
 
         return cls(entries, semester_desc, start_date)
 
-    def to_ics(self) -> tuple[ics.Calendar, TransformationResults]:
+    def to_ics(
+        self, preference: JwcSchedulePreference
+    ) -> tuple[ics.Calendar, TransformationResults]:
         cal = ics.Calendar()
         transformation_results = TransformationResults(set(), set(), set())
 
@@ -174,6 +177,7 @@ class Schedule:
                     self.start_date,
                     categories=[get_calendar_name(self.semester_desc, entry.kind)],
                     transformation_results=transformation_results,
+                    preference=preference,
                 )
             )
         return cal, transformation_results

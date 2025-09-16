@@ -23,6 +23,7 @@ cli = [
     "click>=8.1.8",
     "textual-image>=0.8.2",
     "idshit @ git+https://github.com/Zjl37/idshit.py.git",
+    "pydantic-yaml>=1.6.0",
 ]
 
 
