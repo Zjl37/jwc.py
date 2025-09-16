@@ -8,32 +8,69 @@ import ics  # pyright: ignore[reportMissingTypeStubs]
 from ics.alarm.display import timedelta  # pyright: ignore[reportMissingTypeStubs]
 
 from jwc.schedule_preset_trules import TransformationResults
-from jwc.schedule_preference import JwcSchedulePreference
+from jwc.schedule_preference import JwcSchedulePreference, TextRules1
 from jwc.jwapi_model import XsksEntry, KbEntry
 from typing import cast, Self, Literal
 import zoneinfo
 
 
+def get_emoji(name: str, emoji_rules: TextRules1) -> tuple[str, bool]:
+    for pattern, emoji in emoji_rules:
+        if re.search(pattern, name, flags=re.M):
+            return emoji, True
+    return "", False
+
+
+def get_lab_emoji(name: str, pref: JwcSchedulePreference) -> tuple[str, bool]:
+    """取实验 emoji（只根据课程名称）"""
+    if not pref.enable_emoji_prefix:
+        return ("", True)
+    return get_emoji(name, pref.lab_emoji_rules)
+
+
+def get_lesson_emoji(name: str, pref: JwcSchedulePreference) -> tuple[str, bool]:
+    """取课程 emoji"""
+    if not pref.enable_emoji_prefix:
+        return ("", True)
+    return get_emoji(name, pref.lesson_emoji_rules)
+
+
+def apply_trules(text: str, trules: TextRules1):
+    for pattern, repl in trules:
+        try:
+            res, n = re.subn(pattern, repl, text)
+            if n:
+                return res, True
+        except:
+            continue
+    return text, False
+
+
 def transform_lesson_name_with_preference(
-    name: str, preference: JwcSchedulePreference
+    name: str, pref: JwcSchedulePreference
 ) -> tuple[str, bool]:
     """取课程课程显示名称（添加emoji前缀）"""
-    for pattern, emoji in preference.lesson_emoji_rules:
-        if re.search(re.compile(pattern, flags=re.M), name):
-            return emoji + name, True
+    emoji, has_emoji = get_lesson_emoji(name, pref)
+    name, _ = apply_trules(name, pref.lesson_trules)
 
-    return name, False
+    return emoji + name, has_emoji
 
 
 def transform_lab_name_with_preference(
-    name: str, lab_name: str, preference: JwcSchedulePreference
+    name: str, lab_name: str, pref: JwcSchedulePreference
 ) -> tuple[str, bool]:
     """取实验显示名称（添加emoji前缀）"""
-    for pattern, emoji in preference.lab_emoji_rules:
-        if re.search(re.compile(pattern, flags=re.M), name):
-            return emoji + (lab_name or name), True
+    emoji, has_emoji = get_lab_emoji(name, pref)
 
-    return name, False
+    if lab_name:
+        match pref.lab_lesson_name_display_option:
+            case "both" | "in_title":
+                name, _ = apply_trules(name, pref.lesson_trules)
+                return f"{emoji}{lab_name}（{name}）", has_emoji
+            case _:
+                return emoji + lab_name, has_emoji
+    name, _ = apply_trules(name, pref.lesson_trules)
+    return emoji + name, has_emoji
 
 
 def location_detail_with_preference(
@@ -315,16 +352,25 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
             EXAM,
         )
 
+    def get_reminders_with_preference(
+        self,
+        pref: JwcSchedulePreference,
+    ) -> list[datetime.timedelta]:
+        if self.kind == EXAM:
+            return pref.exam_reminders
+
+        for pattern, reminders in pref.lesson_reminder_rules:
+            if re.search(pattern, self.name, flags=re.M):
+                return reminders
+
+        if self.kind == LAB:
+            return pref.lab_reminders
+        # elif self.kind == LESSON:
+        return pref.lesson_reminders
+
     def get_ics_alarms(self, preference: JwcSchedulePreference) -> list[ics.DisplayAlarm]:
         """根据用户偏好生成提醒设置"""
-        reminders = []
-
-        if self.kind == LESSON:
-            reminders = preference.lesson_reminders
-        elif self.kind == LAB:
-            reminders = preference.lab_reminders
-        elif self.kind == EXAM:
-            reminders = preference.exam_reminders
+        reminders = self.get_reminders_with_preference(preference)
 
         return [ics.DisplayAlarm(reminder) for reminder in reminders]
 
@@ -361,10 +407,17 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
             case ScheduleEntryKind.EXAM:
                 return f"【考试】{self.name}"
 
-    def get_ics_description(self):
-        # 如实验日程具有实验名称，则会作为日程标题，故将课程名称放在描述中
-        return f"""{self.name + "\n" if self.kind == LAB and self.lab_name else ""}
-        {"\n".join(self.description)}"""
+    def get_ics_description(self, preference: JwcSchedulePreference):
+        desc = []
+        if self.kind == LAB and self.lab_name:
+            match preference.lab_lesson_name_display_option:
+                case "both" | "in_description":
+                    desc = [self.name]
+                case _:
+                    pass
+        if preference.enable_description:
+            desc += self.description
+        return "\n".join(desc)
 
     def to_ics_event(
         self,
@@ -389,7 +442,7 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
                 event = ics.Event(
                     name=self.get_ics_name(transformation_results, preference),
                     begin=combine(date, t0, zone),
-                    description=self.get_ics_description(),
+                    description=self.get_ics_description(preference),
                     location=self.location,
                     categories=categories,
                 )
@@ -419,7 +472,7 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
                     name=self.get_ics_name(transformation_results, preference),
                     begin=d0,
                     end=d1,
-                    description=self.get_ics_description(),
+                    description=self.get_ics_description(preference),
                     location=transformed_location,
                     categories=categories,
                     alarms=self.get_ics_alarms(preference),

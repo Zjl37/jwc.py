@@ -360,16 +360,28 @@ def phxp_to_ics(
 )
 def init_schedule_preferences(output: str | None):
     """【生成日历设置模版】"""
-    preference = JwcSchedulePreference()
-    preference.merge_with_preset_rules(
-        T_LESSON_RULES_RAW[:3], T_LAB_RULES_RAW[:3], T_LOCATION_RULES_RAW[:3]
-    )
-
     preference_file = output or (cache.jwc_cache_dir() + "/schedule-preference.yaml")
 
     if os.path.exists(preference_file):
         if not click.confirm(f"[?] 文件 {preference_file} 已存在，要覆盖吗？"):
             return
+
+    preference = JwcSchedulePreference()
+    # 一些示例
+    preference.merge_with_preset_rules(
+        T_LESSON_RULES_RAW[:3], T_LAB_RULES_RAW[:3], T_LOCATION_RULES_RAW[:3]
+    )
+    preference.lesson_trules = [("马.+原", "马原"), ("程序设计", "C语言")]
+    preference.lesson_reminder_rules = [
+        (
+            "物理实验",
+            [
+                datetime.timedelta(days=-2),
+                datetime.timedelta(minutes=-40),
+                datetime.timedelta(minutes=-20),
+            ],
+        )
+    ]
 
     to_yaml_file(preference_file, preference)
 
