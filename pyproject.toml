@@ -27,9 +27,6 @@ cli = [
 ]
 
 
-[tool.pdm]
-distribution = true
-
 [project.scripts]
 jwc = "jwc.cli:cli"
 
@@ -42,3 +39,12 @@ line-length = 90
 
 [tool.ruff.lint]
 ignore = ["F541"]
+
+[tool.pdm]
+distribution = true
+
+
+[dependency-groups]
+dev = [
+    "types-requests>=2.32.4.20250913",
+]

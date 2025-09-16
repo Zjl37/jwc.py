@@ -367,9 +367,13 @@ def init_schedule_preferences(output: str | None):
 
     preference_file = output or (cache.jwc_cache_dir() + "/schedule-preference.yaml")
 
+    if os.path.exists(preference_file):
+        if not click.confirm(f"[?] 文件 {preference_file} 已存在，要覆盖吗？"):
+            return
+
     to_yaml_file(preference_file, preference)
 
-    click.echo(f"[i] 已生成示例日历偏好设置文件：{output}")
+    click.echo(f"[i] 已生成示例日历偏好设置文件：{preference_file}")
     click.echo("[i] 你可以编辑此文件来自定义提醒时间、emoji规则和地点转换规则")
     click.echo("[i] 使用示例：")
     click.echo("    jwc to-ics -p my-preferences.yaml")

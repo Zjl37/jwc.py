@@ -45,8 +45,8 @@ def current_semester() -> tuple[str, str]:
         # Force refresh if cache is old
         if (
             datetime.datetime.now().timestamp() - os.path.getmtime(cache_file)
-        ) > 30 * 86400:
-            click.secho("[i] 学期信息缓存超过30天，自动刷新...", fg="yellow")
+        ) > 3 * 86400:
+            click.secho("[i] 学期信息缓存超过3天，自动刷新...", fg="yellow")
             return refresh_semester_cache()
         with open(cache_file) as f:
             semester = CurrentSemester.model_validate_json(f.read())

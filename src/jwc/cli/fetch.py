@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from http import cookiejar
 import click
 import requests
 import requests.cookies
@@ -15,6 +16,7 @@ import os
 import time
 import stat
 import pickle
+from http.cookies import SimpleCookie
 
 from jwc.jwapi_common import heartbeat
 
@@ -99,17 +101,19 @@ def clear_session_cache() -> None:
 
 def cli_auth_cookie(session: requests.Session):
     # Cookie
-    session.headers.update(
-        {
-            "Pragma": "no-cache",
-            "Proxy-Connection": "keep-alive",
-            "X-Requested-With": "XMLHttpRequest",
-            "Cookie": click.prompt(
-                "输入本研教学管理与服务平台的 Cookie，形如“route=???; JSESSIONID=???”",
-                hide_input=True,
-            ),
-        }
+    header = click.prompt(
+        "输入本研教学管理与服务平台的 Cookie，形如“route=???; JSESSIONID=???”",
+        hide_input=True,
     )
+
+    simple_cookie = SimpleCookie()
+    simple_cookie.load(header)
+
+    for key, morsel in simple_cookie.items():
+        c: cookiejar.Cookie = requests.cookies.create_cookie(  # pyright: ignore[reportUnknownVariableType]
+            name=key, value=morsel.value, domain="jw.hitsz.edu.cn"
+        )
+        session.cookies.set_cookie(c)  # pyright: ignore[reportUnknownArgumentType]
 
 
 def dump_auth_error(session: requests.Session, res: requests.Response):
