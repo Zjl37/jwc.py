@@ -66,9 +66,11 @@ def transform_lab_name_with_preference(
         match pref.lab_lesson_name_display_option:
             case "both" | "in_title":
                 name, _ = apply_trules(name, pref.lesson_trules)
-                return f"{emoji}{lab_name}（{name}）", has_emoji
+                seg_lesson_name = f"（{name}）"
             case _:
-                return emoji + lab_name, has_emoji
+                seg_lesson_name = ""
+        return f"{emoji}{lab_name}{seg_lesson_name}", has_emoji
+
     name, _ = apply_trules(name, pref.lesson_trules)
     return emoji + name, has_emoji
 
@@ -379,15 +381,11 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
         transformation_results: TransformationResults,
         preference: JwcSchedulePreference,
     ):
-        str_teacher = f"［{self.teacher}］" if self.teacher else ""
-        if not preference.enable_emoji_prefix:
-            match self.kind:
-                case ScheduleEntryKind.LAB:
-                    return (self.lab_name or self.name) + str_teacher
-                case ScheduleEntryKind.LESSON:
-                    return f"{self.name}{str_teacher}"
-                case ScheduleEntryKind.EXAM:
-                    return f"【考试】{self.name}"
+        match preference.teacher_display_option:
+            case "both" | "in_title":
+                seg_teacher = f"［{self.teacher}］" if self.teacher else ""
+            case _:
+                seg_teacher = ""
 
         match self.kind:
             case ScheduleEntryKind.LAB:
@@ -396,23 +394,29 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
                 )
                 if not was_transformed:
                     transformation_results.untransformed_labs.add(self.name)
-                return transformed_name + str_teacher
+                return transformed_name + seg_teacher
             case ScheduleEntryKind.LESSON:
                 transformed_name, was_transformed = transform_lesson_name_with_preference(
                     self.name, preference
                 )
                 if not was_transformed:
                     transformation_results.untransformed_lessons.add(self.name)
-                return f"{transformed_name}{str_teacher}"
+                return transformed_name + seg_teacher
             case ScheduleEntryKind.EXAM:
                 return f"【考试】{self.name}"
 
     def get_ics_description(self, preference: JwcSchedulePreference):
-        desc = []
+        desc: list[str] = []
         if self.kind == LAB and self.lab_name:
             match preference.lab_lesson_name_display_option:
                 case "both" | "in_description":
-                    desc = [self.name]
+                    desc += [self.name]
+                case _:
+                    pass
+        if self.teacher:
+            match preference.teacher_display_option:
+                case "both" | "in_description":
+                    desc += ["教师：" + self.teacher]
                 case _:
                     pass
         if preference.enable_description:

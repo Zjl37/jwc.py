@@ -11,7 +11,7 @@ import datetime
 
 type TextRules1 = list[tuple[str, str]]
 
-type LabLessonNameDisplayOptionSimple = (
+type SegmentDisplayOptionSimple = (
     Literal["in_description"] | Literal["none"] | Literal["in_title"] | Literal["both"]
 )
 
@@ -48,16 +48,20 @@ class JwcSchedulePreference(BaseModel):
         ]
     )
 
+    # 在课程名前添加 emoji 的规则
     lesson_emoji_rules: TextRules1 = Field(default_factory=list)
     lab_emoji_rules: TextRules1 = Field(default_factory=list)
+    # 改变地点、课程名的显示名称的规则
     location_trules: TextRules1 = Field(default_factory=list)
 
     lesson_trules: TextRules1 = Field(default_factory=list)
+    # 为特定课程单独设置提醒时间的规则
     lesson_reminder_rules: list[tuple[str, list[datetime.timedelta]]] = Field(
         default_factory=list
     )
 
-    lab_lesson_name_display_option: LabLessonNameDisplayOptionSimple = "in_description"
+    lab_lesson_name_display_option: SegmentDisplayOptionSimple = "in_description"
+    teacher_display_option: SegmentDisplayOptionSimple = "in_title"
 
     def merge_with_preset_rules(
         self,
