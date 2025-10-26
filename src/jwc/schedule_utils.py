@@ -82,15 +82,10 @@ def location_detail_with_preference(
     if not preference.enable_location_transformation:
         return location, False
 
-    # 先应用用户规则
     for pattern, replacement in preference.location_trules:
-        try:
-            compiled_pattern = re.compile(pattern, flags=re.M)
-            res, n = re.subn(compiled_pattern, replacement, location)
-            if n:
-                return res, True
-        except:
-            continue
+        res, n = re.subn(pattern, replacement, location)
+        if n:
+            return res, True
 
     return location, False
 
@@ -437,6 +432,12 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
             case ScheduledDates():
                 dates = list(self.dates.all_dates(semester_start_date))
 
+        transformed_location, location_was_transformed = (
+            location_detail_with_preference(self.location, preference)
+        )
+        if not location_was_transformed:
+            transformation_results.untransformed_locations.add(self.location)
+
         if not self.time_ranges:
             # 生成全天日程
             t0 = time_slot_mapping[1][0]
@@ -447,7 +448,7 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
                     name=self.get_ics_name(transformation_results, preference),
                     begin=combine(date, t0, zone),
                     description=self.get_ics_description(preference),
-                    location=self.location,
+                    location=transformed_location,
                     categories=categories,
                 )
                 event.make_all_day()
@@ -465,12 +466,6 @@ http://jw.hitsz.edu.cn/byyfile{obj.FILEURL}
             for date in dates:
                 d0 = combine(date, t0)
                 d1 = combine(date, t1)
-
-                transformed_location, location_was_transformed = (
-                    location_detail_with_preference(self.location, preference)
-                )
-                if not location_was_transformed:
-                    transformation_results.untransformed_locations.add(self.location)
 
                 event = ics.Event(
                     name=self.get_ics_name(transformation_results, preference),
