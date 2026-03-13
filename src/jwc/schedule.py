@@ -1,6 +1,41 @@
 from dataclasses import dataclass
 from typing import Self
 from typing_extensions import Hashable
+import collections
+import collections.abc
+
+# Compatibility shim for ics 0.7.x on modern Python/TatSu combinations.
+# - TatSu 4.x needs collections.Mapping on Python 3.10+
+# - TatSu 5.x removed generic_main and rejects old parser setting buffer_class
+if not hasattr(collections, "Mapping"):
+    collections.Mapping = collections.abc.Mapping  # type: ignore[attr-defined]
+
+try:
+    from tatsu import util as _tatsu_util  # pyright: ignore[reportMissingTypeStubs]
+
+    if not hasattr(_tatsu_util, "generic_main"):
+        def _generic_main(*_args, **_kwargs):
+            raise RuntimeError("tatsu.util.generic_main is unavailable in this TatSu version.")
+
+        _tatsu_util.generic_main = _generic_main  # type: ignore[attr-defined]
+
+    try:
+        from tatsu.util.configs import Config as _tatsu_config  # pyright: ignore[reportMissingTypeStubs]
+
+        if not getattr(_tatsu_config, "_jwc_ics_compat_patched", False):
+            _original_check_unknowns = _tatsu_config._check_unknowns
+
+            def _check_unknowns_compat(self, **settings):
+                settings.pop("buffer_class", None)
+                return _original_check_unknowns(self, **settings)
+
+            _tatsu_config._check_unknowns = _check_unknowns_compat
+            _tatsu_config._jwc_ics_compat_patched = True
+    except Exception:
+        pass
+except Exception:
+    pass
+
 import ics  # pyright: ignore[reportMissingTypeStubs]
 import datetime
 from jwc.schedule_preset_trules import TransformationResults
