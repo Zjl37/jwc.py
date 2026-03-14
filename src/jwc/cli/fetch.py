@@ -352,8 +352,9 @@ def _finalize_mfa_login(session: requests.Session) -> None:
         raise Exception("会话已失效，请重新登录")
 
 
-def cli_auth_idshit_mfa(session: requests.Session, username: str) -> None:
+def cli_auth_idshit_mfa(session: requests.Session, username: str | None = None) -> None:
     click.secho("[i] 统一身份认证要求二次验证，继续完成验证。", fg="yellow")
+    username = username.strip() if isinstance(username, str) else ""
 
     while True:
         choice = click.prompt(
@@ -375,6 +376,11 @@ def cli_auth_idshit_mfa(session: requests.Session, username: str) -> None:
             _change_reauth_type(session, config.reauth_type)
 
             if config.needs_dynamic_code:
+                if username == "":
+                    username = cast(
+                        str,
+                        click.prompt("请输入用户名（学号，用于发送验证码）", prompt_suffix="："),
+                    ).strip()
                 click.echo(f"[i] 正在发送{label}...")
             message = _send_mfa_code(session, username, config)
             click.echo(f"[i] {message}")
@@ -481,6 +487,11 @@ def cli_auth_qr(session: requests.Session, form_info: dict[str, str] | None = No
             click.echo("[!] 错误提示：" + err)
         dump_auth_error(session, res)
         raise Exception(err)
+
+    if _is_mfa_page(res.url, res.text):
+        cli_auth_idshit_mfa(session)
+        click.echo("[i] 登录成功")
+        return
 
     if "/authentication/main" not in res.url:
         print(f"[!] 登录失败。跳转异常：#{res.url}#")
