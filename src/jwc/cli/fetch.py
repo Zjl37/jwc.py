@@ -16,9 +16,17 @@ import os
 import time
 import stat
 import pickle
+import json
 from http.cookies import SimpleCookie
+from urllib.parse import quote
 
 from jwc.jwapi_common import heartbeat
+
+JW_CAS_SERVICE = "http://jw.hitsz.edu.cn/casLogin"
+REAUTH_VIEW_URL = (
+    f"{HITIDS_HOST}/authserver/reAuthCheck/reAuthLoginView.do"
+    f"?isMultifactor=true&service={quote(JW_CAS_SERVICE, safe='')}"
+)
 
 
 @dataclass
@@ -26,6 +34,21 @@ class SessionCache:
     cookies: requests.cookies.RequestsCookieJar
     headers: dict[str, str | bytes]
     created_at: float
+
+
+@dataclass(frozen=True)
+class MfaTypeConfig:
+    reauth_type: int
+    auth_code_type_name: str | None
+    needs_dynamic_code: bool
+
+
+MFA_TYPE_CONFIGS: dict[str, tuple[str, MfaTypeConfig]] = {
+    "1": ("短信验证码", MfaTypeConfig(3, "reAuthDynamicCodeType", True)),
+    "2": ("哈工大APP验证码", MfaTypeConfig(13, "reAuthWeLinkDynamicCodeType", True)),
+    "3": ("邮箱验证码", MfaTypeConfig(11, "reAuthEmailDynamicCodeType", True)),
+    "4": ("数盾OTP", MfaTypeConfig(10, None, False)),
+}
 
 
 def get_session_cache_path() -> str:
@@ -132,6 +155,241 @@ def dump_auth_error(session: requests.Session, res: requests.Response):
         pickle.dump(dump_info, f)
 
 
+def _is_mfa_page(url: str, body: str) -> bool:
+    lower_url = url.lower()
+    if "reauthloginview.do" in lower_url or "ismultifactor=true" in lower_url:
+        return True
+
+    lower_body = body.lower()
+    return "reauthloginview.do" in lower_body or "ismultifactor=true" in lower_body
+
+
+def _is_auth_login_page(url: str, body: str) -> bool:
+    lower_url = url.lower()
+    lower_body = body.lower()
+    return "/authserver/login" in lower_url and (
+        "#pwdfromid" in lower_body
+        or 'id="pwdfromid"' in lower_body
+        or "pwdencryptsalt" in lower_body
+    )
+
+
+def _response_location(response: requests.Response) -> str:
+    location = response.headers.get("Location")
+    if isinstance(location, str):
+        return location
+    location = response.headers.get("location")
+    return location if isinstance(location, str) else ""
+
+
+def _session_expired_from_response(response: requests.Response) -> bool:
+    location = _response_location(response).lower()
+    return "/authserver/login" in response.url.lower() or "/authserver/login" in location
+
+
+def _post_ids_form(
+    session: requests.Session,
+    url: str,
+    form: dict[str, str],
+    as_ajax: bool = True,
+    allow_redirects: bool = True,
+) -> requests.Response:
+    headers: dict[str, str] = {"Origin": HITIDS_HOST, "Referer": REAUTH_VIEW_URL}
+    if as_ajax:
+        headers["X-Requested-With"] = "XMLHttpRequest"
+    return session.post(
+        url,
+        data=form,
+        headers=headers,
+        allow_redirects=allow_redirects,
+    )
+
+
+def _refresh_reauth_view(session: requests.Session) -> None:
+    session.get(REAUTH_VIEW_URL, headers={"Referer": REAUTH_VIEW_URL})
+
+
+def _change_reauth_type(session: requests.Session, reauth_type: int) -> None:
+    _post_ids_form(
+        session,
+        f"{HITIDS_HOST}/authserver/reAuthCheck/changeReAuthType.do",
+        {
+            "isMultifactor": "true",
+            "reAuthType": str(reauth_type),
+            "service": JW_CAS_SERVICE,
+        },
+    )
+
+
+def _try_parse_json_object(content: str) -> dict[str, object] | None:
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _extract_message(data: dict[str, object]) -> str:
+    for key in ("message", "returnMessage", "msg"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
+def _ensure_dynamic_code_sent(response: requests.Response) -> str:
+    if response.status_code >= 400:
+        raise Exception("验证码发送失败，请稍后重试")
+    if _session_expired_from_response(response):
+        raise Exception("会话已失效，请重新登录")
+    body_text = response.text.strip()
+    if not body_text:
+        raise Exception("验证码发送失败，请稍后重试")
+    parsed = _try_parse_json_object(body_text)
+    if parsed is None:
+        raise Exception("验证码发送失败，请稍后重试")
+
+    err_code = parsed.get("errCode")
+    if isinstance(err_code, str) and err_code == "206302":
+        raise Exception("会话已失效，请重新登录")
+
+    success = parsed.get("success")
+    if isinstance(success, bool):
+        if success:
+            return "验证码已发送，请查收。"
+        raise Exception(_extract_message(parsed) or "验证码发送失败，请稍后重试")
+
+    res = parsed.get("res")
+    if isinstance(res, str):
+        if res.lower() == "success":
+            return "验证码已发送，请查收。"
+        raise Exception(_extract_message(parsed) or "验证码发送失败，请稍后重试")
+
+    code = parsed.get("code")
+    if isinstance(code, str) and code == "200":
+        return "验证码已发送，请查收。"
+
+    raise Exception("验证码发送失败，请稍后重试")
+
+
+def _send_mfa_code(
+    session: requests.Session, username: str, config: MfaTypeConfig
+) -> str:
+    if not config.needs_dynamic_code:
+        return "已切换到令牌验证方式，请输入 OTP。"
+    if username.strip() == "":
+        raise Exception("缺少账号，无法发送验证码")
+
+    response = _post_ids_form(
+        session,
+        f"{HITIDS_HOST}/authserver/dynamicCode/getDynamicCodeByReauth.do",
+        {
+            "userName": username.strip(),
+            "authCodeTypeName": config.auth_code_type_name or "",
+        },
+    )
+    return _ensure_dynamic_code_sent(response)
+
+
+def _is_submit_success(response: requests.Response) -> bool:
+    location = _response_location(response)
+    lower_location = location.lower()
+    if "jw.hitsz.edu.cn" in lower_location:
+        return True
+    if "caslogin" in lower_location and "ticket=" in lower_location:
+        return True
+
+    body_text = response.text.strip()
+    if not body_text:
+        return False
+    if "reauth_success" in body_text.lower():
+        return True
+
+    parsed = _try_parse_json_object(body_text)
+    if parsed is None:
+        return False
+    code = parsed.get("code")
+    return isinstance(code, str) and code.lower() == "reauth_success"
+
+
+def _submit_mfa_code(
+    session: requests.Session, code: str, config: MfaTypeConfig
+) -> None:
+    if code.strip() == "":
+        raise Exception("请输入验证码或 OTP")
+
+    response = _post_ids_form(
+        session,
+        f"{HITIDS_HOST}/authserver/reAuthCheck/reAuthSubmit.do",
+        {
+            "service": JW_CAS_SERVICE,
+            "reAuthType": str(config.reauth_type),
+            "isMultifactor": "true",
+            "password": "",
+            "dynamicCode": code.strip() if config.needs_dynamic_code else "",
+            "uuid": "",
+            "answer1": "",
+            "answer2": "",
+            "otpCode": "" if config.needs_dynamic_code else code.strip(),
+            "skipTmpReAuth": "false",
+        },
+        as_ajax=False,
+        allow_redirects=False,
+    )
+    if not _is_submit_success(response):
+        raise Exception("二次验证失败，请检查验证码或 OTP")
+
+
+def _finalize_mfa_login(session: requests.Session) -> None:
+    response = session.get(
+        f"{HITIDS_HOST}/authserver/login",
+        params={"service": JW_CAS_SERVICE},
+        headers={"Referer": REAUTH_VIEW_URL},
+    )
+    if _is_mfa_page(response.url, response.text):
+        raise Exception("二次验证未生效，请重试")
+    if _is_auth_login_page(response.url, response.text):
+        raise Exception("会话已失效，请重新登录")
+
+
+def cli_auth_idshit_mfa(session: requests.Session, username: str) -> None:
+    click.secho("[i] 统一身份认证要求二次验证，继续完成验证。", fg="yellow")
+
+    while True:
+        choice = click.prompt(
+            """二次认证方式？
+        [1] 短信验证码
+        [2] 哈工大APP验证码
+        [3] 邮箱验证码
+        [4] 数盾OTP
+        """,
+            type=click.Choice(list(MFA_TYPE_CONFIGS.keys())),
+            default="1",
+            show_choices=False,
+            show_default=False,
+            prompt_suffix=">",
+        )
+        label, config = MFA_TYPE_CONFIGS[choice]
+        try:
+            _refresh_reauth_view(session)
+            _change_reauth_type(session, config.reauth_type)
+
+            if config.needs_dynamic_code:
+                click.echo(f"[i] 正在发送{label}...")
+            message = _send_mfa_code(session, username, config)
+            click.echo(f"[i] {message}")
+
+            code = cast(str, click.prompt("请输入验证码或 OTP", prompt_suffix="："))
+            _submit_mfa_code(session, code, config)
+            _finalize_mfa_login(session)
+            click.echo("[i] 二次验证成功")
+            return
+        except Exception as e:
+            click.secho(f"[!] 二次验证失败：{e}", fg="yellow")
+            if not click.confirm("[?] 是否重试二次验证？", default=True):
+                raise
+
+
 def cli_auth_idshit_pwd(
     session: requests.Session, form_info: dict[str, str] | None = None
 ):
@@ -157,7 +415,7 @@ def cli_auth_idshit_pwd(
         session,
         username.strip(),
         password,
-        service="http://jw.hitsz.edu.cn/casLogin",
+        service=JW_CAS_SERVICE,
         form_info=form_info,
     )
     if not res.ok:
@@ -167,6 +425,11 @@ def cli_auth_idshit_pwd(
             click.echo("[!] 错误提示：" + err)
         dump_auth_error(session, res)
         raise Exception(err)
+
+    if _is_mfa_page(res.url, res.text):
+        cli_auth_idshit_mfa(session, username)
+        click.echo("[i] 登录成功")
+        return
 
     if "/authentication/main" not in res.url:
         print(f"[!] 登录失败。跳转异常：#{res.url}#")
@@ -209,7 +472,7 @@ def cli_auth_qr(session: requests.Session, form_info: dict[str, str] | None = No
             raise Exception("二维码已失效")
 
     err, res = login(
-        session, qr_token, service="http://jw.hitsz.edu.cn/casLogin", form_info=form_info
+        session, qr_token, service=JW_CAS_SERVICE, form_info=form_info
     )
     if not res.ok:
         print(f"[!] 登录请求失败！（{res.status_code}）")
@@ -263,7 +526,7 @@ def get_session(force: bool = False) -> requests.Session:
                 return session
 
             autologgedin, _other = visit_ids_try_autologin(
-                session, service="http://jw.hitsz.edu.cn/casLogin"
+                session, service=JW_CAS_SERVICE
             )
             if autologgedin:
                 click.secho("[i] 统一身份认证：7天免登录成功", fg="green")
