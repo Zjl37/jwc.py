@@ -2,7 +2,6 @@ import os
 import re
 import click
 import datetime
-from pydantic_yaml import to_yaml_file, parse_yaml_file_as  # pyright: ignore[reportUnknownVariableType]
 
 from click.decorators import FC
 
@@ -32,6 +31,7 @@ def load_schedule_preferences(preference_file: str | None) -> JwcSchedulePrefere
         if not os.path.exists(preference_file):
             return JwcSchedulePreference()
 
+    from pydantic_yaml import parse_yaml_file_as
     return parse_yaml_file_as(JwcSchedulePreference, preference_file)
 
 
@@ -383,6 +383,7 @@ def init_schedule_preferences(output: str | None):
         )
     ]
 
+    from pydantic_yaml import to_yaml_file
     to_yaml_file(preference_file, preference)
 
     click.echo(f"[i] 已生成示例日历偏好设置文件：{preference_file}")

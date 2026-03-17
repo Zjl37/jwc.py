@@ -1,6 +1,9 @@
 import re
 from dataclasses import dataclass
-from warnings import deprecated
+try:
+    from warnings import deprecated  # ty:ignore[unresolved-import]
+except:
+    from typing_extensions import deprecated
 
 
 @dataclass
