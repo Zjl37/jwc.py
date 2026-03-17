@@ -25,6 +25,11 @@ from ..schedule_preset_trules import (
     T_LESSON_RULES_RAW,
     T_LOCATION_RULES_RAW,
 )
+from .share import (
+    maybe_offer_http_share,
+    resolve_calendar_output_path,
+    write_calendar_file,
+)
 
 
 def load_schedule_preferences(preference_file: str | None) -> JwcSchedulePreference:
@@ -202,13 +207,11 @@ def to_ics(
 
     calendar, transformation_results = schedule.to_ics(preference)
     calendar_name = get_calendar_name(get_semester_desc_brief(xn, xq))
-    ics_filename = out_file or f"{cache.jwc_cache_dir()}/out/{calendar_name}.ics"
-    os.makedirs(os.path.dirname(ics_filename), exist_ok=True)
-    with open(ics_filename, "w") as f:
-        _ = f.write(calendar.serialize())
-        print(f"[i] 日历已写入 {ics_filename} 文件。")
+    ics_filename = resolve_calendar_output_path(out_file, f"{calendar_name}.ics")
+    written_path = write_calendar_file(ics_filename, calendar.serialize())
 
     _report_transformation_results(transformation_results)
+    maybe_offer_http_share(written_path)
 
 
 @cli.command()
@@ -238,13 +241,11 @@ def exam_to_ics(
     from ..schedule import EXAM
 
     calendar_name = get_calendar_name(get_semester_desc_brief(xn, xq), EXAM)
-    ics_filename = out_file or f"{cache.jwc_cache_dir()}/out/{calendar_name}.ics"
-    os.makedirs(os.path.dirname(ics_filename), exist_ok=True)
-    with open(ics_filename, "w") as f:
-        _ = f.write(calendar.serialize())
-        print(f"[i] 日历已写入 {ics_filename} 文件。")
+    ics_filename = resolve_calendar_output_path(out_file, f"{calendar_name}.ics")
+    written_path = write_calendar_file(ics_filename, calendar.serialize())
 
     _report_transformation_results(transformation_results)
+    maybe_offer_http_share(written_path)
 
 
 @cli.command()
@@ -346,16 +347,13 @@ def phxp_to_ics(
 
     calendar, transformation_results = schedule.to_ics(preference)
     course_name = obj.rows[0].CourseName
-    ics_filename = (
-        out_file
-        or f"{cache.jwc_cache_dir()}/out/{course_name} - {datetime.date.today().strftime('%m月%d日')}更新.ics"
+    ics_filename = resolve_calendar_output_path(
+        out_file, f"{course_name} - {datetime.date.today().strftime('%m月%d日')}更新.ics"
     )
-    os.makedirs(os.path.dirname(ics_filename), exist_ok=True)
-    with open(ics_filename, "w") as f:
-        _ = f.write(calendar.serialize())
-        print(f"[i] 日历已写入 {ics_filename} 文件。")
+    written_path = write_calendar_file(ics_filename, calendar.serialize())
 
     _report_transformation_results(transformation_results)
+    maybe_offer_http_share(written_path)
 
 
 @cli.command()

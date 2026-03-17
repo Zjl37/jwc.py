@@ -1,6 +1,6 @@
 [project]
 name = "jwc"
-version = "0.5.0"
+version = "0.5.1"
 description = "将某校教务平台的课表转为 ICS 日历"
 authors = [
     {name = "Zjl37", email = "2693911885@qq.com"},
@@ -22,8 +22,10 @@ license = {text = "GPLv3"}
 cli = [
     "appdirs>=1.4.4",
     "click>=8.1.8",
+    "ifaddr>=0.2.0",
     "idshit @ git+https://github.com/Zjl37/idshit.py.git",
     "pydantic-yaml>=1.6.0",
+    "qrcode>=8.2",
 ]
 
 
