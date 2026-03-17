@@ -1,6 +1,8 @@
+import importlib.metadata
 import os
 import pickle
 import time
+import platform
 
 import requests
 
@@ -39,6 +41,8 @@ def _accept_login_response(response: requests.Response) -> bool:
     return "/authentication/main" in response.url
 
 
+_USER_AGENT = f"Zjl37/jwc.py/{importlib.metadata.version('jwc')} ({requests.utils.default_user_agent()}, {platform.system()} {platform.machine()})"
+
 _LOGIN_MANAGER = LoginSessionManager(
     LoginCliConfig(
         service=JW_CAS_SERVICE,
@@ -51,6 +55,7 @@ _LOGIN_MANAGER = LoginSessionManager(
         mfa_username_prompt="请输入用户名（学号，用于发送验证码）",
         allow_cookie_login=True,
         autologin_success_message="[i] 统一身份认证：7天免登录成功",
+        user_agent_factory=lambda: _USER_AGENT,
     )
 )
 

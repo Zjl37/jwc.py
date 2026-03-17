@@ -5,7 +5,7 @@
 groups = ["default", "cli", "dev"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:8a9dec37eace7e6700b43a44da18c5c167aae0e53bd51772ca1b44309e0947b2"
+content_hash = "sha256:6518d55e0cbbcfdee5e58180c744433ba9ab41ce65f61d87ec697024ccb78e86"
 
 [[metadata.targets]]
 requires_python = ">=3.12"
@@ -318,20 +318,6 @@ files = [
 ]
 
 [[package]]
-name = "fake-useragent"
-version = "2.2.0"
-requires_python = ">=3.9"
-summary = "Up-to-date simple useragent faker with real world database"
-groups = ["default"]
-dependencies = [
-    "importlib-resources>=6; python_version < \"3.10\"",
-]
-files = [
-    {file = "fake_useragent-2.2.0-py3-none-any.whl", hash = "sha256:67f35ca4d847b0d298187443aaf020413746e56acd985a611908c73dba2daa24"},
-    {file = "fake_useragent-2.2.0.tar.gz", hash = "sha256:4e6ab6571e40cc086d788523cf9e018f618d07f9050f822ff409a4dfe17c16b2"},
-]
-
-[[package]]
 name = "html5lib"
 version = "1.1"
 requires_python = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
@@ -378,7 +364,8 @@ files = [
 name = "idshit"
 version = "0.1.1"
 requires_python = ">=3.11"
-path = "../idshit"
+git = "https://github.com/Zjl37/idshit.py.git"
+revision = "cc5403a7d30bdfedf3499ce0e9b5073423929704"
 summary = "与某校的统一身份认证平台交互"
 groups = ["cli"]
 dependencies = [
