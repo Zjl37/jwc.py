@@ -1,4 +1,4 @@
-# 动量神蚣
+# 动量神蚣 CLI
 
 动量神蚣（jwc.py）CLI 工具可以代你从 HITSZ 的教务网站上获取课表信息，将其转换为 iCalendar 日历文件，从而可以方便地导入各种日历应用。此外还附带一些其他功能。
 
@@ -33,7 +33,7 @@
     pip install -i https://mirrors.osa.moe/pypi/web/simple "/path/to/jwc-0.2.0-py3-none-any.whl[cli]"
 
     # 走你
-    python -m jwc.cli
+    jwc
 
 你将看到命令行帮助：
 
@@ -53,12 +53,12 @@ Commands:
 像这样运行子命令：
 
 ```
-python -m jwc.cli to-ics
+jwc to-ics
 ```
 
 之后按程序的输出指引操作。
 
-运行后，日历文件（连同一些中间缓存文件）会写入到 jwc-cache 文件夹中。
+运行后，日历文件、登录会话和其他中间文件会写入系统用户数据目录中的 `jwc-cache` 文件夹内。程序在写出文件时会打印具体路径。
 
 后续使用时，在同一文件夹中打开终端，可跳过【创建虚拟环境】【安装 jwc 及其依赖】步骤。当 jwc.py 发布新版本时，可以使用新的 .whl 文件，重新执行 `pip install` 步骤。
 

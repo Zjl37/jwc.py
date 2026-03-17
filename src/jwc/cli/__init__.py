@@ -1,3 +1,5 @@
+import importlib.metadata
+from jwc.cli.cache import jwc_cache_dir
 import os
 import re
 import click
@@ -32,6 +34,7 @@ def load_schedule_preferences(preference_file: str | None) -> JwcSchedulePrefere
             return JwcSchedulePreference()
 
     from pydantic_yaml import parse_yaml_file_as
+
     return parse_yaml_file_as(JwcSchedulePreference, preference_file)
 
 
@@ -100,7 +103,7 @@ def parse_semester_arg(s: str) -> tuple[str, str]:
 
 @click.group()
 def cli():
-    click.echo("[动量神蚣 · jwc.py CLI]")
+    click.echo(f"[动量神蚣 CLI · jwc.py {importlib.metadata.version('jwc')}]")
     pass
 
 
@@ -288,6 +291,7 @@ def session():
     import time
 
     cache_path = get_session_cache_path()
+    click.echo(f"[i] 用户数据目录：{jwc_cache_dir()}")
 
     if not os.path.exists(cache_path):
         click.echo("[i] 当前没有缓存的session")
@@ -384,6 +388,7 @@ def init_schedule_preferences(output: str | None):
     ]
 
     from pydantic_yaml import to_yaml_file
+
     to_yaml_file(preference_file, preference)
 
     click.echo(f"[i] 已生成示例日历偏好设置文件：{preference_file}")

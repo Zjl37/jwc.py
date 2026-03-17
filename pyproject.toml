@@ -20,6 +20,7 @@ license = {text = "GPLv3"}
 
 [project.optional-dependencies]
 cli = [
+    "appdirs>=1.4.4",
     "click>=8.1.8",
     "idshit @ git+https://github.com/Zjl37/idshit.py.git",
     "pydantic-yaml>=1.6.0",

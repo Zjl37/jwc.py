@@ -4,6 +4,7 @@ from typing import cast
 import click
 import os
 
+from appdirs import user_data_dir
 from pydantic import ValidationError
 import requests
 
@@ -19,11 +20,18 @@ from ..jwapi_model import (
 )
 
 
+APP_DIR_NAME = "jwc.py"
+APP_AUTHOR = "Zjl37"
+CACHE_DIR_NAME = "jwc-cache"
+
+
 def jwc_cache_dir():
-    dir = "./jwc-cache"
-    if not os.path.isdir(dir):
-        os.makedirs(dir)
-    return dir
+    dir_path = os.path.join(
+        user_data_dir(appname=APP_DIR_NAME, appauthor=APP_AUTHOR),
+        CACHE_DIR_NAME,
+    )
+    os.makedirs(dir_path, exist_ok=True)
+    return dir_path
 
 
 def request_current_semester() -> CurrentSemester:
